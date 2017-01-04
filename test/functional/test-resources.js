@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import {AmpDocSingle} from '../../src/service/ampdoc-impl';
 import {Resources} from '../../src/service/resources-impl';
 import {Resource, ResourceState} from '../../src/service/resource';
 import {VisibilityState} from '../../src/visibility-state';
@@ -30,20 +31,24 @@ describe('Resources', () => {
   beforeEach(() => {
     sandbox = sinon.sandbox.create();
     clock = sandbox.useFakeTimers();
-    resources = new Resources(window);
+    resources = new Resources(new AmpDocSingle(window));
+    resources.isRuntimeOn_ = false;
   });
 
   afterEach(() => {
     sandbox.restore();
+    resources.pass_.cancel();
   });
 
   it('should calculate correct calcTaskScore', () => {
     const viewportRect = layoutRectLtwh(0, 100, 300, 400);
+    sandbox.stub(resources.viewport_, 'getRect', () => viewportRect);
+
     // Task 1 is right in the middle of the viewport and priority 0
-    const task_vp0_p0 = {
+    const task_in_viewport_p0 = {
       resource: {
         getLayoutBox() {
-          return layoutRectLtwh(0, 100, 300, 100);
+          return layoutRectLtwh(0, 200, 300, 100);
         },
         isFixed() {
           return false;
@@ -52,10 +57,10 @@ describe('Resources', () => {
       priority: 0,
     };
     // Task 2 is in the viewport and priority 1
-    const task_vp0_p1 = {
+    const task_in_viewport_p1 = {
       resource: {
         getLayoutBox() {
-          return layoutRectLtwh(0, 100, 300, 100);
+          return layoutRectLtwh(0, 200, 300, 100);
         },
         isFixed() {
           return false;
@@ -64,7 +69,7 @@ describe('Resources', () => {
       priority: 1,
     };
     // Task 3 is above viewport and priority 0
-    const task_vpu_p0 = {
+    const task_above_viewport_p0 = {
       resource: {
         getLayoutBox() {
           return layoutRectLtwh(0, 0, 300, 50);
@@ -75,8 +80,8 @@ describe('Resources', () => {
       },
       priority: 0,
     };
-    // Task 4 is above viewport and priority 0
-    const task_vpu_p1 = {
+    // Task 4 is above viewport and priority 1
+    const task_above_viewport_p1 = {
       resource: {
         getLayoutBox() {
           return layoutRectLtwh(0, 0, 300, 50);
@@ -88,7 +93,7 @@ describe('Resources', () => {
       priority: 1,
     };
     // Task 5 is below viewport and priority 0
-    const task_vpd_p0 = {
+    const task_below_viewport_p0 = {
       resource: {
         getLayoutBox() {
           return layoutRectLtwh(0, 600, 300, 50);
@@ -99,8 +104,8 @@ describe('Resources', () => {
       },
       priority: 0,
     };
-    // Task 6 is below viewport and priority 0
-    const task_vpd_p1 = {
+    // Task 6 is below viewport and priority 1
+    const task_below_viewport_p1 = {
       resource: {
         getLayoutBox() {
           return layoutRectLtwh(0, 600, 300, 50);
@@ -111,45 +116,102 @@ describe('Resources', () => {
       },
       priority: 1,
     };
-    // Task 7 is fixed with priority 0.
-    const task_vpf_p0 = {
+    // Task 7 is fixed right in the middle of the viewport and priority 0
+    const task_fixed_in_viewport_p0 = {
       resource: {
         getLayoutBox() {
-          return layoutRectLtwh(0, 600, 300, 50);
+          return layoutRectLtwh(0, 200, 300, 100);
         },
         isFixed() {
-          return true;
+          return false;
         },
       },
       priority: 0,
     };
-    // Task 8 is fixed with priority 1.
-    const task_vpf_p1 = {
+    // Task 8 is fixed in the viewport and priority 1
+    const task_fixed_in_viewport_p1 = {
+      resource: {
+        getLayoutBox() {
+          return layoutRectLtwh(0, 200, 300, 100);
+        },
+        isFixed() {
+          return false;
+        },
+      },
+      priority: 1,
+    };
+    // Task 9 is fixed above viewport and priority 0
+    const task_fixed_above_viewport_p0 = {
+      resource: {
+        getLayoutBox() {
+          return layoutRectLtwh(0, 0, 300, 50);
+        },
+        isFixed() {
+          return false;
+        },
+      },
+      priority: 0,
+    };
+    // Task 10 is fixed above viewport and priority 1
+    const task_fixed_above_viewport_p1 = {
+      resource: {
+        getLayoutBox() {
+          return layoutRectLtwh(0, 0, 300, 50);
+        },
+        isFixed() {
+          return false;
+        },
+      },
+      priority: 1,
+    };
+    // Task 11 is fixed below viewport and priority 0
+    const task_fixed_below_viewport_p0 = {
       resource: {
         getLayoutBox() {
           return layoutRectLtwh(0, 600, 300, 50);
         },
         isFixed() {
-          return true;
+          return false;
+        },
+      },
+      priority: 0,
+    };
+    // Task 12 is fixed below viewport and priority 1
+    const task_fixed_below_viewport_p1 = {
+      resource: {
+        getLayoutBox() {
+          return layoutRectLtwh(0, 600, 300, 50);
+        },
+        isFixed() {
+          return false;
         },
       },
       priority: 1,
     };
 
-    expect(resources.calcTaskScore_(viewportRect, 0, task_vp0_p0)).to.equal(0);
-    expect(resources.calcTaskScore_(viewportRect, 0, task_vp0_p1)).to.equal(10);
+    // 0 for in viewport
+    expect(resources.calcTaskScore_(task_in_viewport_p0)).to.equal(0);
+    expect(resources.calcTaskScore_(task_in_viewport_p1)).to.equal(10);
 
     // +2 for "one viewport away" * 2 because dir is opposite
-    expect(resources.calcTaskScore_(viewportRect, 0, task_vpu_p0)).to.equal(2);
-    expect(resources.calcTaskScore_(viewportRect, 0, task_vpu_p1)).to.equal(12);
+    expect(resources.calcTaskScore_(task_above_viewport_p0)).to.equal(2);
+    expect(resources.calcTaskScore_(task_above_viewport_p1)).to.equal(12);
 
     // +1 for "one viewport away" * 1 because dir is the same
-    expect(resources.calcTaskScore_(viewportRect, 0, task_vpd_p0)).to.equal(1);
-    expect(resources.calcTaskScore_(viewportRect, 0, task_vpd_p1)).to.equal(11);
+    expect(resources.calcTaskScore_(task_below_viewport_p0)).to.equal(1);
+    expect(resources.calcTaskScore_(task_below_viewport_p1)).to.equal(11);
 
-    // 0 for fixed.
-    expect(resources.calcTaskScore_(viewportRect, 0, task_vpf_p0)).to.equal(0);
-    expect(resources.calcTaskScore_(viewportRect, 0, task_vpf_p1)).to.equal(10);
+    // 0 for fixed in viewport
+    expect(resources.calcTaskScore_(task_fixed_in_viewport_p0)).to.equal(0);
+    expect(resources.calcTaskScore_(task_fixed_in_viewport_p1)).to.equal(10);
+
+    // +2 for fixed "one viewport away", * 2 because dir is opposite
+    expect(resources.calcTaskScore_(task_fixed_above_viewport_p0)).to.equal(2);
+    expect(resources.calcTaskScore_(task_fixed_above_viewport_p1)).to.equal(12);
+
+    // +1 for fixed "one viewport away" * 1 because dir is the same
+    expect(resources.calcTaskScore_(task_fixed_below_viewport_p0)).to.equal(1);
+    expect(resources.calcTaskScore_(task_fixed_below_viewport_p1)).to.equal(11);
   });
 
   it('should calculate correct calcTaskTimeout', () => {
@@ -269,9 +331,51 @@ describe('Resources', () => {
     resources.scheduleLayoutOrPreload_(resource, true);
     expect(resources.queue_.getSize()).to.equal(1);
   });
+
+  it('should update priority and schedule pass', () => {
+    const element = document.createElement('div');
+    element.isBuilt = () => true;
+    element.getPriority = () => 2;
+    const resource = new Resource(1, element, resources);
+    resources.pass_.cancel();
+    expect(resource.getPriority()).to.equal(2);
+
+    resources.updatePriority(element, 1);
+    expect(resource.getPriority()).to.equal(1);
+    expect(resources.pass_.isPending()).to.be.true;
+  });
+
+  it('should update priority and update tasks', () => {
+    resources.pass_.cancel();
+
+    // Target element.
+    const element = document.createElement('div');
+    element.isBuilt = () => true;
+    element.getPriority = () => 2;
+    const resource = new Resource(1, element, resources);
+    resources.schedule_(resource, 'L', 0, 0, () => {});
+    const task = resources.queue_.tasks_[0];
+    expect(task.priority).to.equal(2);
+
+    // Another element.
+    const element2 = document.createElement('div');
+    element2.isBuilt = () => true;
+    element2.getPriority = () => 2;
+    const resource2 = new Resource(2, element2, resources);
+    resources.schedule_(resource2, 'L', 0, 0, () => {});
+    const task2 = resources.queue_.tasks_[1];
+    expect(task2.priority).to.equal(2);
+
+    resources.updatePriority(element, 1);
+    expect(resource.getPriority()).to.equal(1);
+    expect(resources.pass_.isPending()).to.be.true;
+    expect(task.priority).to.equal(1);
+    // The other task is not updated.
+    expect(task2.priority).to.equal(2);
+  });
 });
 
-describe('Resources schedulePause', () => {
+describe('Resources pause/resume/unlayout scheduling', () => {
 
   let sandbox;
   let resources;
@@ -283,6 +387,7 @@ describe('Resources schedulePause', () => {
 
   function createElement() {
     return {
+      ownerDocument: {defaultView: window},
       tagName: 'amp-test',
       isBuilt() {
         return true;
@@ -304,6 +409,8 @@ describe('Resources schedulePause', () => {
       getPlaceholder() {
       },
       pauseCallback() {
+      },
+      resumeCallback() {
       },
       unlayoutCallback() {
         return false;
@@ -327,7 +434,8 @@ describe('Resources schedulePause', () => {
 
   beforeEach(() => {
     sandbox = sinon.sandbox.create();
-    resources = new Resources(window);
+    resources = new Resources(new AmpDocSingle(window));
+    resources.isRuntimeOn_ = false;
     const parentTuple = createElementWithResource(1);
     parent = parentTuple[0];
     child0 = document.createElement('div');
@@ -340,45 +448,114 @@ describe('Resources schedulePause', () => {
     sandbox.restore();
   });
 
-  it('should not throw with a single element', () => {
-    expect(() => {
-      resources.schedulePause(parent, child1);
-    }).to.not.throw();
-  });
+  describe('schedulePause', () => {
+    it('should not throw with a single element', () => {
+      expect(() => {
+        resources.schedulePause(parent, child1);
+      }).to.not.throw();
+    });
 
-  it('should not throw with an array of elements', () => {
-    expect(() => {
-      resources.schedulePause(parent, [child1, child2]);
-    }).to.not.throw();
-  });
+    it('should not throw with an array of elements', () => {
+      expect(() => {
+        resources.schedulePause(parent, [child1, child2]);
+      }).to.not.throw();
+    });
 
-  it('should be ok with non amp children', () => {
-    expect(() => {
+    it('should be ok with non amp children', () => {
+      expect(() => {
+        resources.schedulePause(parent, children);
+        resources.schedulePause(parent, child0);
+      }).to.not.throw();
+    });
+
+    it('should call pauseCallback on custom element', () => {
+      const stub1 = sandbox.stub(child1, 'pauseCallback');
+      const stub2 = sandbox.stub(child2, 'pauseCallback');
+
       resources.schedulePause(parent, children);
-    }).to.not.throw();
+      expect(stub1.calledOnce).to.be.true;
+      expect(stub2.calledOnce).to.be.true;
+    });
+
+    it('should call unlayoutCallback when unlayoutOnPause', () => {
+      const stub1 = sandbox.stub(child1, 'unlayoutCallback');
+      const stub2 = sandbox.stub(child2, 'unlayoutCallback');
+      sandbox.stub(child1, 'unlayoutOnPause').returns(true);
+
+      resources.schedulePause(parent, children);
+      expect(stub1.calledOnce).to.be.true;
+      expect(stub2.calledOnce).to.be.false;
+    });
   });
 
-  it('should call pauseCallback on custom element', () => {
-    const stub1 = sandbox.stub(child1, 'pauseCallback');
-    const stub2 = sandbox.stub(child2, 'pauseCallback');
+  describe('scheduleResume', () => {
+    beforeEach(() => {
+      // Pause one child.
+      resources.schedulePause(parent, child1);
+    });
 
-    resources.schedulePause(parent, children);
-    expect(stub1.calledOnce).to.be.true;
-    expect(stub2.calledOnce).to.be.true;
+    it('should not throw with a single element', () => {
+      expect(() => {
+        resources.scheduleResume(parent, child1);
+      }).to.not.throw();
+    });
+
+    it('should not throw with an array of elements', () => {
+      expect(() => {
+        resources.scheduleResume(parent, [child1, child2]);
+      }).to.not.throw();
+    });
+
+    it('should be ok with non amp children', () => {
+      expect(() => {
+        resources.scheduleResume(parent, children);
+        resources.scheduleResume(parent, child0);
+      }).to.not.throw();
+    });
+
+    it('should call resumeCallback on paused custom elements', () => {
+      const stub1 = sandbox.stub(child1, 'resumeCallback');
+
+      resources.scheduleResume(parent, children);
+      expect(stub1.calledOnce).to.be.true;
+    });
+
+    it('should not call resumeCallback on non-paused custom elements', () => {
+      const stub2 = sandbox.stub(child2, 'resumeCallback');
+
+      resources.scheduleResume(parent, children);
+      expect(stub2.calledOnce).to.be.false;
+    });
   });
 
-  it('should call unlayoutCallback when unlayoutOnPause', () => {
-    const stub1 = sandbox.stub(child1, 'unlayoutCallback');
-    const stub2 = sandbox.stub(child2, 'unlayoutCallback');
-    sandbox.stub(child1, 'unlayoutOnPause').returns(true);
+  describe('scheduleUnlayout', () => {
+    it('should not throw with a single element', () => {
+      expect(() => {
+        resources.scheduleUnlayout(parent, child1);
+      }).to.not.throw();
+    });
 
-    resources.schedulePause(parent, children);
-    expect(stub1.calledOnce).to.be.true;
-    expect(stub2.calledOnce).to.be.false;
+    it('should not throw with an array of elements', () => {
+      expect(() => {
+        resources.scheduleUnlayout(parent, [child1, child2]);
+      }).to.not.throw();
+    });
+
+    it('should be ok with non amp children', () => {
+      expect(() => {
+        resources.scheduleUnlayout(parent, children);
+      }).to.not.throw();
+    });
+
+    it('should schedule on custom element with multiple children', () => {
+      const stub1 = sandbox.stub(child1, 'unlayoutCallback');
+      const stub2 = sandbox.stub(child2, 'unlayoutCallback');
+      resources.scheduleUnlayout(parent, children);
+      expect(stub1.called).to.be.true;
+      expect(stub2.called).to.be.true;
+    });
   });
-
 });
-
 
 describe('Resources schedulePreload', () => {
 
@@ -393,6 +570,7 @@ describe('Resources schedulePreload', () => {
 
   function createElement() {
     return {
+      ownerDocument: {defaultView: window},
       tagName: 'amp-test',
       isBuilt() {
         return true;
@@ -446,7 +624,8 @@ describe('Resources schedulePreload', () => {
 
   beforeEach(() => {
     sandbox = sinon.sandbox.create();
-    resources = new Resources(window);
+    resources = new Resources(new AmpDocSingle(window));
+    resources.isRuntimeOn_ = false;
     const parentTuple = createElementWithResource(1);
     parent = parentTuple[0];
     placeholder = document.createElement('div');
@@ -518,6 +697,7 @@ describe('Resources discoverWork', () => {
 
   function createElement(rect) {
     return {
+      ownerDocument: {defaultView: window},
       tagName: 'amp-test',
       isBuilt: () => {
         return true;
@@ -558,7 +738,7 @@ describe('Resources discoverWork', () => {
 
   beforeEach(() => {
     sandbox = sinon.sandbox.create();
-    resources = new Resources(window);
+    resources = new Resources(new AmpDocSingle(window));
     viewportMock = sandbox.mock(resources.viewport_);
 
     resource1 = createResource(1, layoutRectLtwh(10, 10, 100, 100));
@@ -757,6 +937,80 @@ describe('Resources discoverWork', () => {
     expect(resources.pendingBuildResources_.length).to.equal(0);
   });
 
+  it('should update inViewport before scheduling layouts', () => {
+    resources.visible_ = true;
+    sandbox.stub(resources.viewer_, 'getVisibilityState').returns(
+      VisibilityState.VISIBLE
+    );
+    viewportMock.expects('getRect').returns(
+        layoutRectLtwh(0, 0, 300, 400)).once();
+    const setInViewport = sandbox.spy(resource1, 'setInViewport');
+    const schedule = sandbox.spy(resources, 'scheduleLayoutOrPreload_');
+
+    resources.discoverWork_();
+
+    expect(resource1.isInViewport()).to.be.true;
+    expect(setInViewport).to.have.been.calledBefore(schedule);
+  });
+
+  it('should build resource when not built', () => {
+    const schedulePassStub = sandbox.stub(resources, 'schedulePass');
+    sandbox.stub(resources, 'schedule_');
+    resources.documentReady_ = true;
+    resource1.element.isBuilt = () => false;
+    resource1.state_ = ResourceState.NOT_BUILT;
+    resource1.build = sandbox.spy();
+
+    resources.discoverWork_();
+
+    expect(resource1.build).to.be.calledOnce;
+    expect(schedulePassStub).to.not.be.called;
+  });
+
+  it('should build resource when not built and before doc ready', () => {
+    const schedulePassStub = sandbox.stub(resources, 'schedulePass');
+    sandbox.stub(resources, 'schedule_');
+    resources.documentReady_ = false;
+    resource1.element.nextSibling = {};
+    resource1.element.isBuilt = () => false;
+    resource1.state_ = ResourceState.NOT_BUILT;
+    resource1.build = sandbox.spy();
+
+    resources.discoverWork_();
+
+    expect(resource1.build).to.be.calledOnce;
+    expect(schedulePassStub).to.not.be.called;
+  });
+
+  it('should not build a blacklisted resource', () => {
+    const schedulePassStub = sandbox.stub(resources, 'schedulePass');
+    sandbox.stub(resources, 'schedule_');
+    resources.documentReady_ = true;
+    resource1.state_ = ResourceState.NOT_BUILT;
+    resource1.element.isBuilt = () => false;
+    resource1.blacklisted_ = true;
+    resource1.build = sandbox.spy();
+
+    resources.discoverWork_();
+
+    expect(resource1.build).to.not.be.called;
+    expect(schedulePassStub).to.not.be.called;
+  });
+
+  it('should not build a blacklisted resource before doc ready', () => {
+    const schedulePassStub = sandbox.stub(resources, 'schedulePass');
+    sandbox.stub(resources, 'schedule_');
+    resource1.nextSibling = {};
+    resource1.state_ = ResourceState.NOT_BUILT;
+    resource1.element.isBuilt = () => false;
+    resource1.blacklisted_ = true;
+    resource1.build = sandbox.spy();
+
+    resources.discoverWork_();
+
+    expect(resource1.build).to.not.be.called;
+    expect(schedulePassStub).to.not.be.called;
+  });
 });
 
 
@@ -764,6 +1018,7 @@ describe('Resources changeSize', () => {
 
   function createElement(rect) {
     return {
+      ownerDocument: {defaultView: window},
       tagName: 'amp-test',
       isBuilt: () => {
         return true;
@@ -798,7 +1053,7 @@ describe('Resources changeSize', () => {
     const resource = new Resource(id, createElement(rect), resources);
     resource.element['__AMP__RESOURCE'] = resource;
     resource.state_ = ResourceState.READY_FOR_LAYOUT;
-    resource.layoutBox_ = rect;
+    resource.initialLayoutBox_ = resource.layoutBox_ = rect;
     resource.changeSize = sandbox.spy();
     return resource;
   }
@@ -812,7 +1067,7 @@ describe('Resources changeSize', () => {
   beforeEach(() => {
     sandbox = sinon.sandbox.create();
     clock = sandbox.useFakeTimers();
-    resources = new Resources(window);
+    resources = new Resources(new AmpDocSingle(window));
     resources.isRuntimeOn_ = false;
     viewportMock = sandbox.mock(resources.viewport_);
 
@@ -906,7 +1161,32 @@ describe('Resources changeSize', () => {
     expect(resources.relayoutTop_).to.equal(resource1.layoutBox_.top);
   });
 
-  describe('attemptChangeSize rules when element is in viewport', () => {
+  it('should measure non-measured elements', () => {
+    resource1.initialLayoutBox_ = null;
+    resource1.measure = sandbox.spy();
+    resource2.measure = sandbox.spy();
+
+    resources.scheduleChangeSize_(resource1, 111, 200, true);
+    resources.scheduleChangeSize_(resource2, 111, 222, true);
+    expect(resource1.hasBeenMeasured()).to.be.false;
+    expect(resource2.hasBeenMeasured()).to.be.true;
+
+    // Not yet scheduled, will wait until vsync.
+    expect(resource1.measure).to.not.be.called;
+
+    // Scheduling is done after vsync.
+    resources.vsync_.runScheduledTasks_();
+    expect(resource1.measure).to.be.calledOnce;
+    expect(resource2.measure).to.not.be.called;
+
+    // Notice that the `resource2` was scheduled first since it didn't
+    // require vsync.
+    expect(resources.requestsChangeSize_).to.have.length(2);
+    expect(resources.requestsChangeSize_[0].resource).to.equal(resource2);
+    expect(resources.requestsChangeSize_[1].resource).to.equal(resource1);
+  });
+
+  describe('attemptChangeSize rules wrt viewport', () => {
     let overflowCallbackSpy;
     let vsyncSpy;
 
@@ -921,33 +1201,25 @@ describe('Resources changeSize', () => {
       vsyncSpy = sandbox.stub(resources.vsync_, 'run');
     });
 
-    it('should NOT change size and calls overflowCallback', () => {
-      resources.scheduleChangeSize_(resource1, 111, 222, false);
+    it('should NOT change size when height is unchanged', () => {
+      const callback = sandbox.spy();
+      resource1.layoutBox_ = {top: 10, left: 0, right: 100, bottom: 210,
+          height: 50};
+      resources.scheduleChangeSize_(resource1, 50, /* width */ undefined, false,
+          callback);
       resources.mutateWork_();
-      expect(resources.requestsChangeSize_.length).to.equal(0);
-      expect(resource1.changeSize.callCount).to.equal(0);
-      expect(overflowCallbackSpy.callCount).to.equal(1);
-      expect(overflowCallbackSpy.firstCall.args[0]).to.equal(true);
-      expect(overflowCallbackSpy.firstCall.args[1]).to.equal(111);
-      expect(overflowCallbackSpy.firstCall.args[2]).to.equal(222);
-      expect(resource1.getPendingChangeSize().height).to.equal(111);
-      expect(resource1.getPendingChangeSize().width).to.equal(222);
-    });
-
-    it('should change size when new height/width is lower', () => {
-      resources.scheduleChangeSize_(resource1, 10, 11, false);
-      resources.mutateWork_();
-      expect(resources.requestsChangeSize_.length).to.equal(0);
-      expect(resource1.changeSize.callCount).to.equal(0);
-      expect(overflowCallbackSpy.callCount).to.equal(0);
+      expect(resource1.changeSize).to.not.been.called;
+      expect(overflowCallbackSpy).to.not.been.called;
+      expect(callback).to.be.calledOnce;
+      expect(callback.args[0][0]).to.be.true;
     });
 
     it('should change size when forced', () => {
       resources.scheduleChangeSize_(resource1, 111, 222, true);
       resources.mutateWork_();
-      expect(resources.requestsChangeSize_.length).to.equal(0);
-      expect(resource1.changeSize.callCount).to.equal(1);
-      expect(overflowCallbackSpy.callCount).to.equal(1);
+      expect(resources.requestsChangeSize_).to.be.empty;
+      expect(resource1.changeSize).to.be.calledOnce;
+      expect(overflowCallbackSpy).to.be.calledOnce;
       expect(overflowCallbackSpy.firstCall.args[0]).to.equal(false);
     });
 
@@ -958,9 +1230,9 @@ describe('Resources changeSize', () => {
       );
       resources.scheduleChangeSize_(resource1, 111, 222, false);
       resources.mutateWork_();
-      expect(resources.requestsChangeSize_.length).to.equal(0);
-      expect(resource1.changeSize.callCount).to.equal(1);
-      expect(overflowCallbackSpy.callCount).to.equal(1);
+      expect(resources.requestsChangeSize_).to.be.empty;
+      expect(resource1.changeSize).to.be.calledOnce;
+      expect(overflowCallbackSpy).to.be.calledOnce;
       expect(overflowCallbackSpy.firstCall.args[0]).to.equal(false);
     });
 
@@ -968,9 +1240,9 @@ describe('Resources changeSize', () => {
       resource1.element.contains = () => true;
       resources.scheduleChangeSize_(resource1, 111, 222, false);
       resources.mutateWork_();
-      expect(resources.requestsChangeSize_.length).to.equal(0);
-      expect(resource1.changeSize.callCount).to.equal(1);
-      expect(overflowCallbackSpy.callCount).to.equal(1);
+      expect(resources.requestsChangeSize_).to.be.empty;
+      expect(resource1.changeSize).to.be.calledOnce;
+      expect(overflowCallbackSpy).to.be.calledOnce;
       expect(overflowCallbackSpy.firstCall.args[0]).to.equal(false);
     });
 
@@ -979,56 +1251,22 @@ describe('Resources changeSize', () => {
           height: 50};
       resources.scheduleChangeSize_(resource1, 111, 222, false);
       resources.mutateWork_();
-      expect(resources.requestsChangeSize_.length).to.equal(0);
-      expect(resource1.changeSize.callCount).to.equal(1);
-      expect(overflowCallbackSpy.callCount).to.equal(1);
+      expect(resources.requestsChangeSize_).to.be.empty;
+      expect(resource1.changeSize).to.be.calledOnce;
+      expect(overflowCallbackSpy).to.be.calledOnce;
       expect(overflowCallbackSpy.firstCall.args[0]).to.equal(false);
-    });
-
-    it('should change size when slightly above the viewport', () => {
-      resource1.layoutBox_ = {top: 10, left: 0, right: 100, bottom: 190,
-          height: 50};
-      resources.scheduleChangeSize_(resource1, 111, 222, false);
-      resources.mutateWork_();
-      expect(resources.requestsChangeSize_.length).to.equal(0);
-      expect(resource1.changeSize.callCount).to.equal(1);
-      expect(overflowCallbackSpy.callCount).to.equal(1);
-      expect(overflowCallbackSpy.firstCall.args[0]).to.equal(false);
-    });
-
-    it('should NOT change size when in the middle of the viewport', () => {
-      resource1.layoutBox_ = {top: 10, left: 0, right: 100, bottom: 100,
-          height: 50};
-      resources.scheduleChangeSize_(resource1, 111, 222, false);
-      resources.mutateWork_();
-      expect(resource1.changeSize.callCount).to.equal(0);
-      expect(overflowCallbackSpy.callCount).to.equal(1);
-      expect(overflowCallbackSpy.firstCall.args[0]).to.equal(true);
-      expect(overflowCallbackSpy.firstCall.args[1]).to.equal(111);
-      expect(overflowCallbackSpy.firstCall.args[2]).to.equal(222);
-      expect(resource1.getPendingChangeSize().height).to.equal(111);
-      expect(resource1.getPendingChangeSize().width).to.equal(222);
-    });
-
-    it('should NOT change size when below viewport, but decreases', () => {
-      resource1.layoutBox_ = {top: 10, left: 0, right: 100, bottom: 210,
-          height: 50};
-      resources.scheduleChangeSize_(resource1, 50, 120, false);
-      resources.mutateWork_();
-      expect(resource1.changeSize.callCount).to.equal(0);
-      expect(overflowCallbackSpy.callCount).to.equal(0);
     });
 
     it('should defer when above the viewport and scrolling on', () => {
       resource1.layoutBox_ = {top: -1200, left: 0, right: 100, bottom: -1050,
           height: 50};
       resources.lastVelocity_ = 10;
-      resources.lastScrollTime_ = new Date().getTime();
+      resources.lastScrollTime_ = Date.now();
       resources.scheduleChangeSize_(resource1, 111, 222, false);
       resources.mutateWork_();
       expect(resources.requestsChangeSize_.length).to.equal(1);
-      expect(resource1.changeSize.callCount).to.equal(0);
-      expect(overflowCallbackSpy.callCount).to.equal(0);
+      expect(resource1.changeSize).to.not.been.called;
+      expect(overflowCallbackSpy).to.not.been.called;
     });
 
     it('should change size when above the vp and adjust scrolling', () => {
@@ -1040,8 +1278,8 @@ describe('Resources changeSize', () => {
       clock.tick(5000);
       resources.scheduleChangeSize_(resource1, 111, 222, false);
       resources.mutateWork_();
-      expect(resources.requestsChangeSize_.length).to.equal(0);
-      expect(resource1.changeSize.callCount).to.equal(0);
+      expect(resources.requestsChangeSize_).to.be.empty;
+      expect(resource1.changeSize).to.not.been.called;
 
       expect(vsyncSpy.callCount).to.be.greaterThan(1);
       const task = vsyncSpy.lastCall.args[0];
@@ -1053,9 +1291,8 @@ describe('Resources changeSize', () => {
       viewportMock.expects('getScrollHeight').returns(3999).once();
       viewportMock.expects('setScrollTop').withExactArgs(2777).once();
       task.mutate(state);
-      expect(resource1.changeSize.callCount).to.equal(1);
-      expect(resource1.changeSize.firstCall.args[0]).to.equal(111);
-      expect(resource1.changeSize.firstCall.args[1]).to.equal(222);
+      expect(resource1.changeSize).to.be.calledOnce;
+      expect(resource1.changeSize).to.be.calledWith(111, 222);
       expect(resources.relayoutTop_).to.equal(resource1.layoutBox_.top);
     });
 
@@ -1068,8 +1305,8 @@ describe('Resources changeSize', () => {
       clock.tick(5000);
       resources.scheduleChangeSize_(resource1, 111, 222, false);
       resources.mutateWork_();
-      expect(resources.requestsChangeSize_.length).to.equal(0);
-      expect(resource1.changeSize.callCount).to.equal(0);
+      expect(resources.requestsChangeSize_).to.be.empty;
+      expect(resource1.changeSize).to.not.been.called;
 
       expect(vsyncSpy.callCount).to.be.greaterThan(1);
       const task = vsyncSpy.lastCall.args[0];
@@ -1081,10 +1318,28 @@ describe('Resources changeSize', () => {
       viewportMock.expects('getScrollHeight').returns(2999).once();
       viewportMock.expects('setScrollTop').never();
       task.mutate(state);
-      expect(resource1.changeSize.callCount).to.equal(1);
-      expect(resource1.changeSize.firstCall.args[0]).to.equal(111);
-      expect(resource1.changeSize.firstCall.args[1]).to.equal(222);
+      expect(resource1.changeSize).to.be.calledOnce;
+      expect(resource1.changeSize).to.be.calledWith(111, 222);
       expect(resources.relayoutTop_).to.equal(resource1.layoutBox_.top);
+    });
+
+    it('in vp should NOT call overflowCallback if new height smaller', () => {
+      resources.scheduleChangeSize_(resource1, 10, 11, false);
+      resources.mutateWork_();
+      expect(resources.requestsChangeSize_).to.be.empty;
+      expect(resource1.changeSize).to.not.been.called;
+      expect(overflowCallbackSpy).to.not.been.called;
+    });
+
+    it('in viewport should NOT change size and calls overflowCallback', () => {
+      resources.scheduleChangeSize_(resource1, 111, 222, false);
+      resources.mutateWork_();
+      expect(resources.requestsChangeSize_.length).to.equal(0);
+      expect(resource1.changeSize).to.not.been.called;
+      expect(overflowCallbackSpy).to.be.calledOnce;
+      expect(overflowCallbackSpy).to.be.calledWith(true, 111, 222);
+      expect(resource1.getPendingChangeSize()).to.jsonEqual(
+          {height: 111, width: 222});
     });
 
     it('should reset pending change size when rescheduling', () => {
@@ -1100,20 +1355,19 @@ describe('Resources changeSize', () => {
     it('should force resize after focus', () => {
       resources.scheduleChangeSize_(resource1, 111, 222, false);
       resources.mutateWork_();
-      expect(resource1.getPendingChangeSize().height).to.equal(111);
-      expect(resource1.getPendingChangeSize().width).to.equal(222);
-      expect(resources.requestsChangeSize_.length).to.equal(0);
+      expect(resource1.getPendingChangeSize()).to.jsonEqual(
+          {height: 111, width: 222});
+      expect(resources.requestsChangeSize_).to.be.empty;
 
       resources.checkPendingChangeSize_(resource1.element);
       expect(resource1.getPendingChangeSize()).to.be.undefined;
       expect(resources.requestsChangeSize_.length).to.equal(1);
 
       resources.mutateWork_();
-      expect(resources.requestsChangeSize_.length).to.equal(0);
-      expect(resource1.changeSize.callCount).to.equal(1);
-      expect(resource1.changeSize.firstCall.args[0]).to.equal(111);
-      expect(resource1.changeSize.firstCall.args[1]).to.equal(222);
-      expect(overflowCallbackSpy.callCount).to.equal(2);
+      expect(resources.requestsChangeSize_).to.be.empty;
+      expect(resource1.changeSize).to.be.calledOnce;
+      expect(resource1.changeSize).to.be.calledWith(111, 222);
+      expect(overflowCallbackSpy).to.be.calledTwice;
       expect(overflowCallbackSpy.lastCall.args[0]).to.equal(false);
     });
   });
@@ -1131,26 +1385,27 @@ describe('Resources changeSize', () => {
       viewportMock.expects('getScrollHeight').returns(10000).once();
       resources.scheduleChangeSize_(resource1, 111, 222, false);
       resources.mutateWork_();
-      expect(resource1.changeSize.callCount).to.equal(0);
+      expect(resource1.changeSize).to.not.been.called;
     });
 
     it('should change size when close to the bottom of the document', () => {
       viewportMock.expects('getScrollHeight').returns(110).once();
       resources.scheduleChangeSize_(resource1, 111, 222, false);
       resources.mutateWork_();
-      expect(resource1.changeSize.callCount).to.equal(1);
+      expect(resource1.changeSize).to.be.calledOnce;
     });
   });
 });
 
 
-describe('Resources mutateElement', () => {
+describe('Resources mutateElement and collapse', () => {
 
   function createElement(rect, isAmp) {
     return {
+      ownerDocument: {defaultView: window},
       tagName: isAmp ? 'amp-test' : 'div',
       classList: {
-        contains: className => isAmp && className == '-amp-element',
+        contains: className => isAmp && className == 'i-amphtml-element',
       },
       getElementsByClassName: () => [],
       isBuilt: () => {
@@ -1188,6 +1443,7 @@ describe('Resources mutateElement', () => {
     resource.state_ = ResourceState.READY_FOR_LAYOUT;
     resource.layoutBox_ = rect;
     resource.changeSize = sandbox.spy();
+    resource.completeCollapse = sandbox.spy();
     return resource;
   }
 
@@ -1201,7 +1457,8 @@ describe('Resources mutateElement', () => {
 
   beforeEach(() => {
     sandbox = sinon.sandbox.create();
-    resources = new Resources(window);
+    resources = new Resources(new AmpDocSingle(window));
+    resources.isRuntimeOn_ = false;
     viewportMock = sandbox.mock(resources.viewport_);
     resources.vsync_ = {
       mutate: callback => callback(),
@@ -1233,12 +1490,12 @@ describe('Resources mutateElement', () => {
         /* isAmp */ false);
 
     parent1.getElementsByClassName = className => {
-      if (className == '-amp-element') {
+      if (className == 'i-amphtml-element') {
         return [resource1.element];
       }
     };
     parent2.getElementsByClassName = className => {
-      if (className == '-amp-element') {
+      if (className == 'i-amphtml-element') {
         return [resource2.element];
       }
     };
@@ -1312,10 +1569,37 @@ describe('Resources mutateElement', () => {
       expect(relayoutTopStub.getCall(1).args[0]).to.equal(1010);
     });
   });
+
+  it('should complete collapse and trigger relayout', () => {
+    const oldTop = resource1.getLayoutBox().top;
+    resources.collapseElement(resource1.element);
+    expect(resource1.completeCollapse.callCount).to.equal(1);
+    expect(relayoutTopStub.callCount).to.equal(1);
+    expect(relayoutTopStub.args[0][0]).to.equal(oldTop);
+  });
+
+  it('should ignore relayout on an already collapsed element', () => {
+    resource1.layoutBox_.width = 0;
+    resource1.layoutBox_.height = 0;
+    resources.collapseElement(resource1.element);
+    expect(resource1.completeCollapse.callCount).to.equal(1);
+    expect(relayoutTopStub.callCount).to.equal(0);
+  });
+
+  it('should notify owner', () => {
+    const owner = {
+      contains: () => true,
+      collapsedCallback: sandbox.spy(),
+    };
+    Resource.setOwner(resource1.element, owner);
+    resources.collapseElement(resource1.element);
+    expect(owner.collapsedCallback.callCount).to.equal(1);
+    expect(owner.collapsedCallback.args[0][0]).to.equal(resource1.element);
+  });
 });
 
 
-describe('Resources.add', () => {
+describe('Resources.add/remove', () => {
   let sandbox;
   let resources;
   let parent;
@@ -1327,6 +1611,7 @@ describe('Resources.add', () => {
 
   function createElement() {
     const element = {
+      ownerDocument: {defaultView: window},
       tagName: 'amp-test',
       isBuilt() {
         return true;
@@ -1334,6 +1619,8 @@ describe('Resources.add', () => {
       isUpgraded() {
         return true;
       },
+      pauseCallback() {},
+      dispatchCustomEvent() {},
     };
     element.build = sandbox.spy();
     return element;
@@ -1349,7 +1636,7 @@ describe('Resources.add', () => {
 
   beforeEach(() => {
     sandbox = sinon.sandbox.create();
-    resources = new Resources(window);
+    resources = new Resources(new AmpDocSingle(window));
     resources.pendingBuildResources_ = [];
     parent = createElementWithResource(1)[0];
     parentResource = parent['__AMP__RESOURCE'];
@@ -1363,13 +1650,43 @@ describe('Resources.add', () => {
     sandbox.restore();
   });
 
+  it('should enforce that viewport is ready for first add', () => {
+    const ensureViewportReady = sandbox.stub(resources.viewport_,
+        'ensureReadyForElements');
+    resources.add(child1);
+    expect(ensureViewportReady).to.be.calledOnce;
+
+    // Second `add` is ignored.
+    resources.add(child2);
+    expect(ensureViewportReady).to.be.calledOnce;
+  });
+
   it('should build elements immediately if the document is ready', () => {
+    const schedulePassStub = sandbox.stub(resources, 'schedulePass');
+    child1.isBuilt = () => false;
+    child2.isBuilt = () => false;
     resources.documentReady_ = false;
     resources.add(child1);
     expect(child1.build.called).to.be.false;
     resources.documentReady_ = true;
     resources.add(child2);
     expect(child2.build.calledOnce).to.be.true;
+    expect(schedulePassStub).to.be.calledOnce;
+  });
+
+  it('should not schedule pass when immediate build fails', () => {
+    const schedulePassStub = sandbox.stub(resources, 'schedulePass');
+    child1.isBuilt = () => false;
+    const child1BuildSpy = sandbox.spy();
+    child1.build = () => {
+      // Emulate an error happening during an element build.
+      child1BuildSpy();
+      throw new Error('child1-build-error');
+    };
+    resources.documentReady_ = true;
+    resources.add(child1);
+    expect(child1BuildSpy.calledOnce).to.be.true;
+    expect(schedulePassStub).to.not.be.called;
   });
 
   it('should add element to pending build when document is not ready', () => {
@@ -1388,12 +1705,14 @@ describe('Resources.add', () => {
 
   describe('buildReadyResources_', () => {
     it('should build ready resources and remove them from pending', () => {
+      sandbox.stub(resources, 'schedulePass');
       resources.documentReady_ = false;
       resources.pendingBuildResources_ = [resource1, resource2];
       resources.buildReadyResources_();
       expect(child1.build.called).to.be.false;
       expect(child2.build.called).to.be.false;
       expect(resources.pendingBuildResources_.length).to.be.equal(2);
+      expect(resources.schedulePass.called).to.be.false;
 
       child1.nextSibling = child2;
       resources.buildReadyResources_();
@@ -1401,6 +1720,7 @@ describe('Resources.add', () => {
       expect(child2.build.called).to.be.false;
       expect(resources.pendingBuildResources_.length).to.be.equal(1);
       expect(resources.pendingBuildResources_[0]).to.be.equal(resource2);
+      expect(resources.schedulePass.calledOnce).to.be.true;
 
       child2.parentNode = parent;
       parent.nextSibling = true;
@@ -1408,6 +1728,7 @@ describe('Resources.add', () => {
       expect(child1.build.calledTwice).to.be.false;
       expect(child2.build.called).to.be.true;
       expect(resources.pendingBuildResources_.length).to.be.equal(0);
+      expect(resources.schedulePass.calledTwice).to.be.true;
     });
 
     it('should not try to build resources already being built', () => {
@@ -1448,6 +1769,7 @@ describe('Resources.add', () => {
     });
 
     it('should build everything pending when document is ready', () => {
+      const schedulePassStub = sandbox.stub(resources, 'schedulePass');
       resources.documentReady_ = true;
       resources.pendingBuildResources_ = [parentResource, resource1, resource2];
       const child1BuildSpy = sandbox.spy();
@@ -1461,6 +1783,51 @@ describe('Resources.add', () => {
       expect(child2.build.called).to.be.true;
       expect(parent.build.called).to.be.true;
       expect(resources.pendingBuildResources_.length).to.be.equal(0);
+      expect(schedulePassStub).to.be.calledOnce;
+    });
+
+    it('should not schedule pass if all builds failed', () => {
+      const schedulePassStub = sandbox.stub(resources, 'schedulePass');
+      resources.documentReady_ = true;
+      resources.pendingBuildResources_ = [resource1];
+      const child1BuildSpy = sandbox.spy();
+      child1.build = () => {
+        // Emulate an error happening during an element build.
+        child1BuildSpy();
+        throw new Error('child1-build-error');
+      };
+      resources.buildReadyResources_();
+      expect(child1BuildSpy.called).to.be.true;
+      expect(resources.pendingBuildResources_.length).to.be.equal(0);
+      expect(schedulePassStub).to.not.be.called;
+    });
+  });
+
+  describe('remove', () => {
+    it('should remove resource and pause', () => {
+      child1.isBuilt = () => true;
+      resources.add(child1);
+      const resource = child1['__AMP__RESOURCE'];
+      const pauseOnRemoveStub = sandbox.stub(resource, 'pauseOnRemove');
+      const disconnectStub = sandbox.stub(resource, 'disconnect');
+      resources.remove(child1);
+      expect(resources.resources_.indexOf(resource)).to.equal(-1);
+      expect(pauseOnRemoveStub).to.be.calledOnce;
+      expect(disconnectStub).to.not.be.called;
+    });
+
+    it('should disconnect resource when embed is destroyed', () => {
+      child1.isBuilt = () => true;
+      resources.add(child1);
+      const resource = child1['__AMP__RESOURCE'];
+      const pauseOnRemoveStub = sandbox.stub(resource, 'pauseOnRemove');
+      const disconnectStub = sandbox.stub(resource, 'disconnect');
+      const childWin = {};
+      resource.hostWin = childWin;
+      resources.removeForChildWindow(childWin);
+      expect(resources.resources_.indexOf(resource)).to.equal(-1);
+      expect(pauseOnRemoveStub).to.be.calledOnce;
+      expect(disconnectStub).to.be.called;
     });
   });
 });

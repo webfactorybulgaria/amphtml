@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-import {getElementService} from './element-service';
+import {getElementServiceForDoc} from './element-service';
+
 
 /**
- * @param {!Window} win
+ * @param {!Node|!./service/ampdoc-impl.AmpDoc} nodeOrDoc
  * @return {!Promise<!Activity>}
  */
-export function activityFor(win) {
-  return getElementService(win, 'activity', 'amp-analytics');
+export function activityForDoc(nodeOrDoc) {
+  return /** @type {!Promise<!Activity>} */ (
+      getElementServiceForDoc(nodeOrDoc, 'activity', 'amp-analytics'));
 };

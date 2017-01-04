@@ -84,6 +84,9 @@ describe('Layout', () => {
     expect(getLengthNumeral('10.1px')).to.equal(10.1);
     expect(getLengthNumeral('10.1em')).to.equal(10.1);
     expect(getLengthNumeral('10.1vmin')).to.equal(10.1);
+
+    expect(getLengthNumeral(null)).to.equal(undefined);
+    expect(getLengthNumeral('auto')).to.equal(undefined);
   });
 
   it('assertLength', () => {
@@ -156,8 +159,8 @@ describe('Layout', () => {
     expect(div.style.width).to.equal('');
     expect(div.style.height).to.equal('');
     expect(div.style.display).to.equal('none');
-    expect(div).to.have.class('-amp-layout-nodisplay');
-    expect(div).to.not.have.class('-amp-layout-size-defined');
+    expect(div).to.have.class('i-amphtml-layout-nodisplay');
+    expect(div).to.not.have.class('i-amphtml-layout-size-defined');
     expect(div.children.length).to.equal(0);
   });
 
@@ -169,8 +172,8 @@ describe('Layout', () => {
     expect(applyLayout_(div)).to.equal(Layout.FIXED);
     expect(div.style.width).to.equal('100px');
     expect(div.style.height).to.equal('200px');
-    expect(div).to.have.class('-amp-layout-fixed');
-    expect(div).to.have.class('-amp-layout-size-defined');
+    expect(div).to.have.class('i-amphtml-layout-fixed');
+    expect(div).to.have.class('i-amphtml-layout-size-defined');
     expect(div.children.length).to.equal(0);
   });
 
@@ -195,8 +198,8 @@ describe('Layout', () => {
     expect(applyLayout_(div)).to.equal(Layout.FIXED_HEIGHT);
     expect(div.style.width).to.equal('');
     expect(div.style.height).to.equal('200px');
-    expect(div).to.have.class('-amp-layout-fixed-height');
-    expect(div).to.have.class('-amp-layout-size-defined');
+    expect(div).to.have.class('i-amphtml-layout-fixed-height');
+    expect(div).to.have.class('i-amphtml-layout-size-defined');
     expect(div.children.length).to.equal(0);
   });
 
@@ -207,8 +210,8 @@ describe('Layout', () => {
     expect(applyLayout_(div)).to.equal(Layout.FIXED_HEIGHT);
     expect(div.style.width).to.equal('');
     expect(div.style.height).to.equal('200px');
-    expect(div).to.have.class('-amp-layout-fixed-height');
-    expect(div).to.have.class('-amp-layout-size-defined');
+    expect(div).to.have.class('i-amphtml-layout-fixed-height');
+    expect(div).to.have.class('i-amphtml-layout-size-defined');
     expect(div.children.length).to.equal(0);
   });
 
@@ -250,10 +253,10 @@ describe('Layout', () => {
     expect(applyLayout_(div)).to.equal(Layout.RESPONSIVE);
     expect(div.style.width).to.equal('');
     expect(div.style.height).to.equal('');
-    expect(div).to.have.class('-amp-layout-responsive');
-    expect(div).to.have.class('-amp-layout-size-defined');
+    expect(div).to.have.class('i-amphtml-layout-responsive');
+    expect(div).to.have.class('i-amphtml-layout-size-defined');
     expect(div.children.length).to.equal(1);
-    expect(div.children[0].tagName.toLowerCase()).to.equal('i-amp-sizer');
+    expect(div.children[0].tagName.toLowerCase()).to.equal('i-amphtml-sizer');
     expect(div.children[0].style.paddingTop).to.equal('200%');
   });
 
@@ -264,10 +267,10 @@ describe('Layout', () => {
     expect(applyLayout_(div)).to.equal(Layout.RESPONSIVE);
     expect(div.style.width).to.equal('');
     expect(div.style.height).to.equal('');
-    expect(div).to.have.class('-amp-layout-responsive');
-    expect(div).to.have.class('-amp-layout-size-defined');
+    expect(div).to.have.class('i-amphtml-layout-responsive');
+    expect(div).to.have.class('i-amphtml-layout-size-defined');
     expect(div.children.length).to.equal(1);
-    expect(div.children[0].tagName.toLowerCase()).to.equal('i-amp-sizer');
+    expect(div.children[0].tagName.toLowerCase()).to.equal('i-amphtml-sizer');
     expect(div.children[0].style.paddingTop).to.equal('200%');
   });
 
@@ -276,8 +279,8 @@ describe('Layout', () => {
     expect(applyLayout_(div)).to.equal(Layout.FILL);
     expect(div.style.width).to.equal('');
     expect(div.style.height).to.equal('');
-    expect(div).to.have.class('-amp-layout-fill');
-    expect(div).to.have.class('-amp-layout-size-defined');
+    expect(div).to.have.class('i-amphtml-layout-fill');
+    expect(div).to.have.class('i-amphtml-layout-size-defined');
     expect(div.children.length).to.equal(0);
   });
 
@@ -286,8 +289,8 @@ describe('Layout', () => {
     expect(applyLayout_(div)).to.equal(Layout.CONTAINER);
     expect(div.style.width).to.equal('');
     expect(div.style.height).to.equal('');
-    expect(div).to.have.class('-amp-layout-container');
-    expect(div).to.not.have.class('-amp-layout-size-defined');
+    expect(div).to.have.class('i-amphtml-layout-container');
+    expect(div).to.not.have.class('i-amphtml-layout-size-defined');
     expect(div.children.length).to.equal(0);
   });
 
@@ -298,8 +301,8 @@ describe('Layout', () => {
     expect(applyLayout_(div)).to.equal(Layout.FLEX_ITEM);
     expect(div.style.width).to.equal('100px');
     expect(div.style.height).to.equal('200px');
-    expect(div).to.have.class('-amp-layout-flex-item');
-    expect(div).to.have.class('-amp-layout-size-defined');
+    expect(div).to.have.class('i-amphtml-layout-flex-item');
+    expect(div).to.have.class('i-amphtml-layout-size-defined');
     expect(div.children.length).to.equal(0);
   });
 

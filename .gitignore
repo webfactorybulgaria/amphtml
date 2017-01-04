@@ -6,11 +6,14 @@ c
 dist
 dist.3p
 dist.tools
-examples.build
 examples.min
 node_modules
 npm-debug.log
 .idea
 .tm_properties
 .settings
+.vscode
+typings
+typings.json
 build-system/runner/TESTS-TestSuites.xml
+/test/manual/amp-ad.adtech.html

@@ -36,9 +36,7 @@ describe('amp-kaltura-player', () => {
       if (opt_responsive) {
         kalturaPlayer.setAttribute('layout', 'responsive');
       }
-      iframe.doc.body.appendChild(kalturaPlayer);
-      kalturaPlayer.implementation_.layoutCallback();
-      return kalturaPlayer;
+      return iframe.addElement(kalturaPlayer);
     });
   }
 
@@ -53,8 +51,6 @@ describe('amp-kaltura-player', () => {
       expect(iframe.tagName).to.equal('IFRAME');
       expect(iframe.src).to.equal(
                 'https://cdnapisec.kaltura.com/p/1281471/sp/128147100/embedIframeJs/uiconf_id/33502051/partner_id/1281471?iframeembed=true&playerId=kaltura_player_amp&entry_id=1_3ts1ms9c');
-      expect(iframe.getAttribute('width')).to.equal('111');
-      expect(iframe.getAttribute('height')).to.equal('222');
     });
   });
 
@@ -66,12 +62,14 @@ describe('amp-kaltura-player', () => {
     }, true).then(bc => {
       const iframe = bc.querySelector('iframe');
       expect(iframe).to.not.be.null;
-      expect(iframe.className).to.match(/-amp-fill-content/);
+      expect(iframe.className).to.match(/i-amphtml-fill-content/);
     });
   });
 
   it('requires data-account', () => {
-    return getKaltura({}).should.eventually.be.rejectedWith(
+    return getKaltura({}).then(kp => {
+      kp.build();
+    }).should.eventually.be.rejectedWith(
             /The data-partner attribute is required for/);
   });
 
@@ -84,6 +82,25 @@ describe('amp-kaltura-player', () => {
     }).then(bc => {
       const iframe = bc.querySelector('iframe');
       expect(iframe.src).to.contain('flashvars%5BmyParam%5D=hello%20world');
+    });
+  });
+
+  describe('createPlaceholderCallback', () => {
+    it('should create a placeholder image', () => {
+      return getKaltura({
+        'data-partner': '1281471',
+        'data-entryid': '1_3ts1ms9c',
+        'data-uiconf': '33502051',
+      }).then(kp => {
+        const img = kp.querySelector('amp-img');
+        expect(img).to.not.be.null;
+        expect(img.getAttribute('src')).to.equal(
+            'https://cdnapisec.kaltura.com/p/1281471/thumbnail/entry_id/' +
+            '1_3ts1ms9c/width/111/height/222');
+        expect(img.getAttribute('layout')).to.equal('fill');
+        expect(img.hasAttribute('placeholder')).to.be.true;
+        expect(img.getAttribute('referrerpolicy')).to.equal('origin');
+      });
     });
   });
 });

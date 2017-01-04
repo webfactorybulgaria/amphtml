@@ -19,7 +19,7 @@ limitations under the License.
 <table>
   <tr>
     <td width="40%"><strong>Description</strong></td>
-    <td>Fetches dynamic content from a CORS JSON endpoint and renders it
+    <td>Fetches content dynamically from a CORS JSON endpoint and renders it
 using a supplied template.</td>
   </tr>
   <tr>
@@ -32,11 +32,11 @@ using a supplied template.</td>
   </tr>
   <tr>
     <td class="col-fourty"><strong><a href="https://www.ampproject.org/docs/guides/responsive/control_layout.html">Supported Layouts</a></strong></td>
-    <td>FILL, FIXED, FIXED_HEIGHT, FLEX_ITEM, NODISPLAY, RESPONSIVE</td>
+    <td>fill, fixed, fixed-height, flex-item, nodisplay, responsive</td>
   </tr>
   <tr>
     <td width="40%"><strong>Examples</strong></td>
-    <td><a href="https://github.com/ampproject/amphtml/blob/master/examples/everything.amp.html">everything.amp.html</a></td>
+    <td><a href="https://ampbyexample.com/components/amp-list/">Annotated code example for amp-list</a></td>
   </tr>
 </table>
 
@@ -49,10 +49,17 @@ The `amp-list` defines data source using the following attributes:
 [Fetch API](https://fetch.spec.whatwg.org/). To send credentials, pass the
 value of "include". If this is set, the response must follow the [AMP CORS security guidelines](../../spec/amp-cors-requests.md).
 
-The response must be a JSON object that contains an array property "items":
+The response is expected to contain the array that will be rendered. The path to the array
+is specified using the optional `items` attribute. This attribute contains the dot-notated path
+to the array within the response object. The default value is "items". To indicate that the
+response itself is an array, the "." value can be used. The array can be nested within the
+response and accessed using, e.g. `items="field1.field2"` expression.
+
+Thus, when `items="items"` is specified (the default) the response must be a JSON object that
+contains an array property "items":
 ```json
 {
-  "items": []
+  "items": [...]
 }
 ```
 
@@ -106,7 +113,8 @@ may make a request to something like `https://foo.com/list.json?0.8390278471201`
 
 ## Behavior
 
-The loading is triggered using normal AMP rules depending on how far the element is from
+The request is always made from the client, even if the document was served from the AMP
+cache. Loading is triggered using normal AMP rules depending on how far the element is from
 the current viewport.
 
 If `amp-list` needs more space after loading it requests the AMP runtime to update its
@@ -117,6 +125,30 @@ that AMP Runtime can resize it.
 
 By default, `amp-list` adds `list` ARIA role to the list element and `listitem` role to item
 elements rendered via the template.
+
+## Attributes
+
+**src**
+
+The URL location of the remote endpoint that will return the JSON that will be rendered
+within this `amp-list`. This must be a CORS HTTP service.
+
+**credentials**
+
+Defines a `credentials` option as specified by the [Fetch API](https://fetch.spec.whatwg.org/).
+To send credentials, pass the value of "include". If this is set, the response must follow
+the [AMP CORS security guidelines](../../spec/amp-cors-requests.md).
+
+The support values are "omit" and "include". Default is "omit".
+
+**items**
+
+Defines the expression to locate the array to be rendered within the response. It's a dot-notated
+expression that navigates via fields of the JSON response. Notice:
+
+- The default value is "items". The expected response: `{items: [...]}`.
+- If the response itself is the desired array, use the value of ".". The expected response is: `[...]`.
+- Nest navigation is permitted, e.g. "field1.field2". The expected response is: `{field1: {field2: [...]}}`.
 
 ## Validation
 

@@ -22,7 +22,7 @@
  */
 
 import {getCookie, setCookie} from './cookies';
-import {timer} from './timer';
+import {parseQueryString} from './url';
 
 
 /** @const {string} */
@@ -37,9 +37,8 @@ const COOKIE_EXPIRATION_INTERVAL = COOKIE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
 /** @const {string} */
 const CANARY_EXPERIMENT_ID = 'dev-channel';
 
-/** @const {!Object<string, boolean>} */
-const EXPERIMENT_TOGGLES = Object.create(null);
-
+/** @type {Object<string, boolean>|undefined} */
+let toggles_;
 
 /**
  * Whether the scripts come from a dev channel.
@@ -64,7 +63,7 @@ export function isDevChannel(win) {
  * @private Visible for testing only!
  */
 export function isDevChannelVersionDoNotUse_(win) {
-  return !!win.AMP_CONFIG && win.AMP_CONFIG.canary;
+  return !!(win.AMP_CONFIG && win.AMP_CONFIG.canary);
 }
 
 
@@ -75,32 +74,35 @@ export function isDevChannelVersionDoNotUse_(win) {
  * @return {boolean}
  */
 export function isExperimentOn(win, experimentId) {
-  if (experimentId in EXPERIMENT_TOGGLES) {
-    return EXPERIMENT_TOGGLES[experimentId];
-  }
-  return EXPERIMENT_TOGGLES[experimentId] = calcExperimentOn(win, experimentId);
+  const toggles = experimentToggles(win);
+  return !!toggles[experimentId];
 }
 
 /**
- * Calculate whether the specified experiment is on or off based off of the
- * cookieFlag or the global config frequency given.
+ * Check whether an experiment is on while allowing viewers to force
+ * the experiment state via a viewer URL param of the form:
+ * `e-$experimentId=1` (on) or `e-$experimentId=0` (off).
+ * NOTE: This should only be used if it is needed and if turning the
+ * experiment on or off does not have security implications.
  * @param {!Window} win
  * @param {string} experimentId
  * @return {boolean}
  */
-function calcExperimentOn(win, experimentId) {
-  const cookieFlag = getExperimentIds(win).indexOf(experimentId) != -1;
-  if (cookieFlag) {
-    return true;
+export function isExperimentOnAllowUrlOverride(win, experimentId) {
+  const hash = win.location.originalHash || win.location.hash;
+  if (hash) {
+    // Note: If this is used a lot, this should be optimized to only
+    // parse once per page load.
+    const param = parseQueryString(hash)['e-' + experimentId];
+    if (param == '1') {
+      return true;
+    }
+    if (param == '0') {
+      return false;
+    }
   }
-
-  if (win.AMP_CONFIG && win.AMP_CONFIG.hasOwnProperty(experimentId)) {
-    const frequency = win.AMP_CONFIG[experimentId];
-    return Math.random() < frequency;
-  }
-  return false;
+  return isExperimentOn(win, experimentId);
 }
-
 
 /**
  * Toggles the experiment on or off. Returns the actual value of the experiment
@@ -116,53 +118,100 @@ function calcExperimentOn(win, experimentId) {
  */
 export function toggleExperiment(win, experimentId, opt_on,
     opt_transientExperiment) {
-  const experimentIds = getExperimentIds(win);
-  const currentlyOn = (experimentIds.indexOf(experimentId) != -1) ||
-      (experimentId in EXPERIMENT_TOGGLES && EXPERIMENT_TOGGLES[experimentId]);
-  const on = opt_on !== undefined ? opt_on : !currentlyOn;
+  const currentlyOn = isExperimentOn(win, experimentId);
+  const on = !!(opt_on !== undefined ? opt_on : !currentlyOn);
   if (on != currentlyOn) {
-    if (on) {
-      experimentIds.push(experimentId);
-      EXPERIMENT_TOGGLES[experimentId] = true;
-    } else {
-      experimentIds.splice(experimentIds.indexOf(experimentId), 1);
-      EXPERIMENT_TOGGLES[experimentId] = false;
-    }
+    const toggles = experimentToggles(win);
+    toggles[experimentId] = on;
+
     if (!opt_transientExperiment) {
-      saveExperimentIds(win, experimentIds);
+      const cookieToggles = getExperimentTogglesFromCookie(win);
+      cookieToggles[experimentId] = on;
+      saveExperimentTogglesToCookie(win, cookieToggles);
     }
   }
   return on;
 }
 
+/**
+ * Calculate whether the experiment is on or off based off of the
+ * cookieFlag or the global config frequency given.
+ * @param {!Window} win
+ * @return {!Object<string, boolean>}
+ */
+export function experimentToggles(win) {
+  if (toggles_) {
+    return toggles_;
+  }
+  toggles_ = Object.create(null);
+
+  // Read the default config of this build.
+  if (win.AMP_CONFIG) {
+    for (const experimentId in win.AMP_CONFIG) {
+      const frequency = win.AMP_CONFIG[experimentId];
+      if (typeof frequency === 'number' && frequency >= 0 && frequency <= 1) {
+        toggles_[experimentId] = Math.random() < frequency;
+      }
+    }
+  }
+
+  Object.assign(toggles_, getExperimentTogglesFromCookie(win));
+  return toggles_;
+}
 
 /**
  * Returns a set of experiment IDs currently on.
  * @param {!Window} win
- * @return {!Array<string>}
+ * @return {!Object<string, boolean>}
  */
-function getExperimentIds(win) {
+function getExperimentTogglesFromCookie(win) {
   const experimentCookie = getCookie(win, COOKIE_NAME);
-  return experimentCookie ? experimentCookie.split(/\s*,\s*/g) : [];
-}
+  const tokens = experimentCookie ? experimentCookie.split(/\s*,\s*/g) : [];
 
+  const toggles = Object.create(null);
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].length == 0) {
+      continue;
+    }
+    if (tokens[i][0] == '-') {
+      toggles[tokens[i].substr(1)] = false;
+    } else {
+      toggles[tokens[i]] = true;
+    }
+  }
+
+  return toggles;
+}
 
 /**
  * Saves a set of experiment IDs currently on.
  * @param {!Window} win
- * @param {!Array<string>} experimentIds
+ * @param {!Object<string, boolean>} toggles
  */
-function saveExperimentIds(win, experimentIds) {
+function saveExperimentTogglesToCookie(win, toggles) {
+  const experimentIds = [];
+  for (const experiment in toggles) {
+    experimentIds.push((toggles[experiment] === false ? '-' : '') + experiment);
+  }
+
   setCookie(win, COOKIE_NAME, experimentIds.join(','),
-      timer.now() + COOKIE_EXPIRATION_INTERVAL);
+      Date.now() + COOKIE_EXPIRATION_INTERVAL);
+}
+
+/**
+ * See getExperimentTogglesFromCookie().
+ * @param {!Window} win
+ * @return {!Object<string, boolean>}
+ * @visibleForTesting
+ */
+export function getExperimentToglesFromCookieForTesting(win) {
+  return getExperimentTogglesFromCookie(win);
 }
 
 /**
  * Resets the experimentsToggle cache for testing purposes.
  * @visibleForTesting
  */
-export function resetExperimentToggles_() {
-  Object.keys(EXPERIMENT_TOGGLES).forEach(key => {
-    delete EXPERIMENT_TOGGLES[key];
-  });
+export function resetExperimentTogglesForTesting() {
+  toggles_ = undefined;
 }

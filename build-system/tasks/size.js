@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-var brotliSize = require('brotli-size');
 var del = require('del');
 var fs = require('fs');
 var gulp = require('gulp-help')(require('gulp'));
@@ -29,17 +28,16 @@ var tempFolderName = '__size-temp';
 
 var MIN_FILE_SIZE_POS = 0;
 var GZIP_POS = 1;
-var BROTLI_POS = 2;
-var FILENAME_POS = 3;
+var FILENAME_POS = 2;
 
 // normalized table headers
 var tableHeaders = [
-  ['max', 'min', 'gzip', 'brotli', 'file'],
-  ['---', '---', '---', '---', '---'],
+  ['max', 'min', 'gzip', 'file'],
+  ['---', '---', '---', '---'],
 ];
 
 var tableOptions = {
-  align: ['r', 'r', 'r', 'r', 'l'],
+  align: ['r', 'r', 'r', 'l'],
   hsep: '   |   ',
 };
 
@@ -99,8 +97,22 @@ function normalizeRows(rows) {
   // normalize integration.js
   normalizeRow(rows, 'current-min/f.js', 'current/integration.js', true);
 
+  normalizeRow(rows, 'current-min/ampcontext-lib.js',
+      'current/ampcontext-lib.js', true);
+
   // normalize alp.js
   normalizeRow(rows, 'alp.js', 'alp.max.js', true);
+
+  // normalize amp-shadow.js
+  normalizeRow(rows, 'shadow-v0.js', 'amp-shadow.js', true);
+
+  normalizeRow(rows, 'amp4ads-v0.js', 'amp-inabox.js', true);
+
+  normalizeRow(rows, 'amp4ads-host-v0.js', 'amp-inabox-host.js', true);
+
+  // normalize sw.js
+  normalizeRow(rows, 'sw.js', 'sw.max.js', true);
+  normalizeRow(rows, 'sw-kill.js', 'sw-kill.max.js', true);
 
   // normalize extensions
   var curName = null;
@@ -161,7 +173,6 @@ function onFileThrough(rows, file, enc, cb) {
   rows.push([
     prettyBytes(file.contents.length),
     prettyBytes(gzipSize.sync(file.contents)),
-    prettyBytes(brotliSize.sync(file.contents)),
     file.relative,
   ]);
 
@@ -207,6 +218,7 @@ function sizeTask() {
   gulp.src([
       'dist/**/*.js',
       '!dist/**/*-latest.js',
+      '!dist/**/*check-types.js',
       'dist.3p/{current,current-min}/**/*.js',
     ])
     .pipe(sizer())

@@ -14,28 +14,71 @@
  * limitations under the License.
  */
 
-import {getService} from '../service';
-import {installActionService} from './action-impl';
-import {installResourcesService} from './resources-impl';
+import {actionServiceForDoc} from '../action';
+import {bindForDoc} from '../bind';
+import {dev, user} from '../log';
+import {fromClassForDoc} from '../service';
+import {historyForDoc} from '../history';
+import {installResourcesServiceForDoc} from './resources-impl';
+import {toggle} from '../style';
 
 
 /**
  * This service contains implementations of some of the most typical actions,
  * such as hiding DOM elements.
+ * @implements {../service.EmbeddableService}
  * @private Visible for testing.
  */
 export class StandardActions {
   /**
-   * @param {!Window} win
+   * @param {!./ampdoc-impl.AmpDoc} ampdoc
    */
-  constructor(win) {
+  constructor(ampdoc) {
+    /** @const {!./ampdoc-impl.AmpDoc} */
+    this.ampdoc = ampdoc;
+
     /** @const @private {!./action-impl.ActionService} */
-    this.actions_ = installActionService(win);
+    this.actions_ = actionServiceForDoc(ampdoc);
 
     /** @const @private {!./resources-impl.Resources} */
-    this.resources_ = installResourcesService(win);
+    this.resources_ = installResourcesServiceForDoc(ampdoc);
 
-    this.actions_.addGlobalMethodHandler('hide', this.handleHide.bind(this));
+    this.installActions_(this.actions_);
+  }
+
+  /** @override */
+  adoptEmbedWindow(embedWin) {
+    this.installActions_(actionServiceForDoc(embedWin.document));
+  }
+
+  /**
+   * @param {!./action-impl.ActionService} actionService
+   * @private
+   */
+  installActions_(actionService) {
+    actionService.addGlobalTarget('AMP', this.handleAmpTarget.bind(this));
+    actionService.addGlobalMethodHandler('hide', this.handleHide.bind(this));
+  }
+
+  /**
+   * Handles global `AMP` actions.
+   *
+   * See `amp-actions-and-events.md` for documentation.
+   *
+   * @param {!./action-impl.ActionInvocation} invocation
+   */
+  handleAmpTarget(invocation) {
+    switch (invocation.method) {
+      case 'setState':
+        bindForDoc(this.ampdoc).then(bind => {
+          bind.setState(invocation.args);
+        });
+        return;
+      case 'goBack':
+        historyForDoc(this.ampdoc).goBack();
+        return;
+    }
+    throw user().createError('Unknown AMP action ', invocation.method);
   }
 
   /**
@@ -44,20 +87,23 @@ export class StandardActions {
    * @param {!./action-impl.ActionInvocation} invocation
    */
   handleHide(invocation) {
-    this.resources_.mutateElement(invocation.target, () => {
-      invocation.target.style.display = 'none';
+    const target = dev().assertElement(invocation.target);
+    this.resources_.mutateElement(target, () => {
+      if (target.classList.contains('i-amphtml-element')) {
+        target./*OK*/collapse();
+      } else {
+        toggle(target, false);
+      }
     });
   }
 }
 
 
 /**
- * @param {!Window} win
+ * @param {!./ampdoc-impl.AmpDoc} ampdoc
  * @return {!StandardActions}
  */
-export function installStandardActions(win) {
-  return /** @type {!StandardActions} */ (
-      getService(win, 'standard-actions', () => {
-        return new StandardActions(win);
-      }));
+export function installStandardActionsForDoc(ampdoc) {
+  return fromClassForDoc(
+      ampdoc, 'standard-actions', StandardActions);
 };

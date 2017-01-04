@@ -42,7 +42,7 @@ export function srcsetFromElement(element) {
   // We can't push `src` via `parseSrcset` because URLs in `src` are not always
   // RFC compliant and can't be easily parsed as an `srcset`. For instance,
   // they sometimes contain space characters.
-  const srcAttr = user.assert(element.getAttribute('src'),
+  const srcAttr = user().assert(element.getAttribute('src'),
       'Either non-empty "srcset" or "src" attribute must be specified: %s',
       element);
   return new Srcset([{url: srcAttr, width: undefined, dpr: 1}]);
@@ -65,7 +65,7 @@ export function parseSrcset(s, opt_element) {
   const sSources = s.match(
       /\s*(?:[\S]*)(?:\s+(?:-?(?:\d+(?:\.(?:\d+)?)?|\.\d+)[a-zA-Z]))?(?:\s*,)?/g
   );
-  user.assert(sSources.length > 0,
+  user().assert(sSources.length > 0,
       'srcset has to have at least one source: %s',
       opt_element);
   const sources = [];
@@ -115,7 +115,7 @@ export class Srcset {
    * @param {!Array<!SrcsetSourceDef>} sources
    */
   constructor(sources) {
-    user.assert(sources.length > 0, 'Srcset must have at least one source');
+    user().assert(sources.length > 0, 'Srcset must have at least one source');
     /** @private @const {!Array<!SrcsetSourceDef>} */
     this.sources_ = sources;
 
@@ -124,13 +124,13 @@ export class Srcset {
     let hasDpr = false;
     for (let i = 0; i < this.sources_.length; i++) {
       const source = this.sources_[i];
-      user.assert(
+      user().assert(
           (source.width || source.dpr) && (!source.width || !source.dpr),
           'Either dpr or width must be specified');
       hasWidth = hasWidth || !!source.width;
       hasDpr = hasDpr || !!source.dpr;
     }
-    user.assert(!hasWidth || !hasDpr,
+    user().assert(!hasWidth || !hasDpr,
         'Srcset cannot have both width and dpr sources');
 
     // Source and assert duplicates.
@@ -176,8 +176,8 @@ export class Srcset {
    * @return {!SrcsetSourceDef}
    */
   select(width, dpr) {
-    dev.assert(width, 'width=%s', width);
-    dev.assert(dpr, 'dpr=%s', dpr);
+    dev().assert(width, 'width=%s', width);
+    dev().assert(dpr, 'dpr=%s', dpr);
     let index = -1;
     if (this.widthBased_) {
       index = this.selectByWidth_(width, dpr);
@@ -197,29 +197,24 @@ export class Srcset {
    * @private
    */
   selectByWidth_(width, dpr) {
-    let minIndex = -1;
-    let minWidth = 1000000;
-    let minScore = 1000000;
-    for (let i = 0; i < this.sources_.length; i++) {
+    const length = this.sources_.length;
+    let prevWidth = -Infinity;
+    for (let i = length - 1; i >= 0; i--) {
       const source = this.sources_[i];
-      let sourceWidth;
-      if (source.width) {
-        sourceWidth = source.width / dpr;
-      } else {
-        // Default source: no width: assume values are half of of the
-        // minimum values seen.
-        sourceWidth = minWidth / 2;
+      const sourceWidth = source.width / dpr;
+      // First candidate width that's equal or higher than the requested width
+      // will stop the search.
+      if (sourceWidth >= width) {
+        // The right value is now between `i` and `i + 1` - select the one
+        // that is closer with a slight preference toward higher numbers.
+        const delta = sourceWidth - width;
+        const prevDelta = (width - prevWidth) * 1.1;
+        return (delta < prevDelta) ? i : i + 1;
       }
-      minWidth = Math.min(minWidth, sourceWidth);
-      // The calculation is slightly biased toward higher width by offsetting
-      // score by negative 0.2.
-      const score = Math.abs((sourceWidth - width) / width - 0.2);
-      if (score < minScore) {
-        minScore = score;
-        minIndex = i;
-      }
+      prevWidth = sourceWidth;
     }
-    return minIndex;
+    // Use the first (maximum) value.
+    return 0;
   }
 
   /**
@@ -281,11 +276,11 @@ export class Srcset {
 }
 
 function sortByWidth(s1, s2) {
-  user.assert(s1.width != s2.width, 'Duplicate width: %s', s1.width);
+  user().assert(s1.width != s2.width, 'Duplicate width: %s', s1.width);
   return s2.width - s1.width;
 }
 
 function sortByDpr(s1, s2) {
-  user.assert(s1.dpr != s2.dpr, 'Duplicate dpr: %s', s1.dpr);
+  user().assert(s1.dpr != s2.dpr, 'Duplicate dpr: %s', s1.dpr);
   return s2.dpr - s1.dpr;
 }

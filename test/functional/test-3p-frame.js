@@ -19,38 +19,52 @@ import {
   getIframe,
   getBootstrapBaseUrl,
   getSubDomain,
-  prefetchBootstrap,
+  preloadBootstrap,
   resetCountForTesting,
+  resetBootstrapBaseUrlForTesting,
+  serializeMessage,
+  deserializeMessage,
 } from '../../src/3p-frame';
-import {documentInfoFor} from '../../src/document-info';
+import {documentInfoForDoc} from '../../src/document-info';
 import {loadPromise} from '../../src/event-helper';
-import {preconnectFor} from '../../src/preconnect';
-import {resetServiceForTesting} from '../../src/service';
-import {setModeForTesting} from '../../src/mode';
+import {isExperimentOn} from '../../src/experiments';
+import {preconnectForElement} from '../../src/preconnect';
 import {validateData} from '../../3p/3p';
-import {viewerFor} from '../../src/viewer';
+import {viewerForDoc} from '../../src/viewer';
 import * as sinon from 'sinon';
 
 describe('3p-frame', () => {
 
   let clock;
   let sandbox;
+  let container;
+  let preconnect;
+
+  /**
+   * If true, then in experiment where the passing of context metadata
+   * has been moved from the iframe src hash to the iframe name attribute.
+   */
+  const iframeContextInName = isExperimentOn(
+      window, '3p-frame-context-in-name');
 
   beforeEach(() => {
     sandbox = sinon.sandbox.create();
     clock = sandbox.useFakeTimers();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    preconnect = preconnectForElement(container);
   });
 
   afterEach(() => {
+    resetBootstrapBaseUrlForTesting(window);
     sandbox.restore();
-    resetServiceForTesting(window, 'bootstrapBaseUrl');
     resetCountForTesting();
-    setModeForTesting(null);
     const m = document.querySelector(
         '[name="amp-3p-iframe-src"]');
     if (m) {
       m.parentElement.removeChild(m);
     }
+    document.body.removeChild(container);
   });
 
   function addCustomBootstrap(url) {
@@ -84,6 +98,14 @@ describe('3p-frame', () => {
   });
 
   it('should create an iframe', () => {
+    window.AMP_MODE = {
+      localDev: true,
+      development: false,
+      minified: false,
+      test: false,
+      version: '$internalRuntimeVersion$',
+    };
+
     clock.tick(1234567888);
     const link = document.createElement('link');
     link.setAttribute('rel', 'canonical');
@@ -95,40 +117,75 @@ describe('3p-frame', () => {
     div.setAttribute('data-ping', 'pong');
     div.setAttribute('width', '50');
     div.setAttribute('height', '100');
-    div.setAttribute('ampcid', 'cidValue');
 
-    div.getLayoutBox = function() {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    div.getIntersectionChangeEntry = function() {
       return {
-        width: 100,
-        height: 200,
+        time: 1234567888,
+        rootBounds: {
+          left: 0,
+          top: 0,
+          width,
+          height,
+          bottom: height,
+          right: width,
+          x: 0,
+          y: 0,
+        },
+        boundingClientRect: {
+          width: 100,
+          height: 200,
+        },
+        intersectionRect: {
+          left: 0,
+          top: 0,
+          width: 0,
+          height: 0,
+          bottom: 0,
+          right: 0,
+          x: 0,
+          y: 0,
+        },
       };
     };
 
-    const viewer = viewerFor(window);
+    const viewer = viewerForDoc(window.document);
     const viewerMock = sandbox.mock(viewer);
     viewerMock.expects('getUnconfirmedReferrerUrl')
         .returns('http://acme.org/')
         .once();
 
-    const iframe = getIframe(window, div, '_ping_');
+    container.appendChild(div);
+    const iframe = getIframe(window, div, '_ping_', {clientId: 'cidValue'});
     const src = iframe.src;
     const locationHref = location.href;
     expect(locationHref).to.not.be.empty;
-    const docInfo = documentInfoFor(window);
+    const docInfo = documentInfoForDoc(window.document);
     expect(docInfo.pageViewId).to.not.be.empty;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    const amp3pSentinel = iframe.getAttribute('data-amp-3p-sentinel');
+    let amp3pSentinel;
+    if (iframeContextInName) {
+      const name = JSON.parse(decodeURIComponent(iframe.name));
+      amp3pSentinel = name.attributes._context.sentinel;
+    } else {
+      amp3pSentinel = iframe.getAttribute('data-amp-3p-sentinel');
+    }
     const fragment =
-        '#{"testAttr":"value","ping":"pong","width":50,"height":100,' +
-        '"type":"_ping_"' +
-        ',"_context":{"referrer":"http://acme.org/",' +
+        '{"testAttr":"value","ping":"pong","width":50,"height":100,' +
+        '"type":"_ping_",' +
+        '"_context":{"referrer":"http://acme.org/",' +
         '"canonicalUrl":"https://foo.bar/baz",' +
+        '"sourceUrl":"' + locationHref + '",' +
         '"pageViewId":"' + docInfo.pageViewId + '","clientId":"cidValue",' +
         '"location":{"href":"' + locationHref + '"},"tagName":"MY-ELEMENT",' +
         '"mode":{"localDev":true,"development":false,"minified":false,' +
         '"test":false,"version":"$internalRuntimeVersion$"}' +
+        ',"canary":true' +
         ',"hidden":false' +
+        // Note that DOM fingerprint will change if the document DOM changes
+        // Note also that running it using --files uses different DOM.
+        ',"domFingerprint":"1725030182"' +
+        ',"startTime":1234567888' +
         ',"amp3pSentinel":"' + amp3pSentinel + '"' +
         ',"initialIntersection":{"time":1234567888,' +
         '"rootBounds":{"left":0,"top":0,"width":' + width + ',"height":' +
@@ -136,25 +193,43 @@ describe('3p-frame', () => {
         ',"x":0,"y":0},"boundingClientRect":' +
         '{"width":100,"height":200},"intersectionRect":{' +
         '"left":0,"top":0,"width":0,"height":0,"bottom":0,' +
-        '"right":0,"x":0,"y":0}},"startTime":1234567888}}';
-    expect(src).to.equal(
-        'http://ads.localhost:9876/dist.3p/current/frame.max.html' +
-        fragment);
+        '"right":0,"x":0,"y":0}}}}';
+    if (iframeContextInName) {
+      expect(src).to.equal(
+          'http://ads.localhost:9876/dist.3p/current/frame.max.html');
+      const parsedFragment = JSON.parse(fragment);
+      // Since DOM fingerprint changes between browsers and documents, to have
+      // stable tests, we can only verify its existence.
+      expect(name.attributes._context.domFingerprint).to.exist;
+      delete name.attributes._context.domFingerprint;
+      delete parsedFragment._context.domFingerprint;
+      expect(name.attributes).to.deep.equal(parsedFragment);
 
-    // Switch to same origin for inner tests.
-    iframe.src = '/base/dist.3p/current/frame.max.html' + fragment;
+      // Switch to same origin for inner tests.
+      iframe.src = '/dist.3p/current/frame.max.html';
+    } else {
+      const srcParts = src.split('#');
+      expect(srcParts[0]).to.equal(
+          'http://ads.localhost:9876/dist.3p/current/frame.max.html');
+      const expectedFragment = JSON.parse(srcParts[1]);
+      const parsedFragment = JSON.parse(fragment);
+      // Since DOM fingerprint changes between browsers and documents, to have
+      // stable tests, we can only verify its existence.
+      expect(expectedFragment._context.domFingerprint).to.exist;
+      delete expectedFragment._context.domFingerprint;
+      delete parsedFragment._context.domFingerprint;
+      expect(expectedFragment).to.deep.equal(parsedFragment);
 
+      // Switch to same origin for inner tests.
+      iframe.src = '/dist.3p/current/frame.max.html#' + fragment;
+    }
     document.body.appendChild(iframe);
     return loadPromise(iframe).then(() => {
       const win = iframe.contentWindow;
       expect(win.context.canonicalUrl).to.equal('https://foo.bar/baz');
+      expect(win.context.sourceUrl).to.equal(locationHref);
       expect(win.context.location.href).to.equal(locationHref);
       expect(win.context.location.origin).to.equal('http://localhost:9876');
-      if (location.ancestorOrigins) {
-        expect(win.context.location.originValidated).to.be.true;
-      } else {
-        expect(win.context.location.originValidated).to.be.false;
-      }
       expect(win.context.pageViewId).to.equal(docInfo.pageViewId);
       expect(win.context.referrer).to.equal('http://acme.org/');
       expect(win.context.data.testAttr).to.equal('value');
@@ -169,23 +244,21 @@ describe('3p-frame', () => {
     });
   });
 
+
   it('should pick the right bootstrap url for local-dev mode', () => {
+    window.AMP_MODE = {localDev: true};
     expect(getBootstrapBaseUrl(window)).to.equal(
         'http://ads.localhost:9876/dist.3p/current/frame.max.html');
   });
 
   it('should pick the right bootstrap url for testing mode', () => {
-    const win = {
-      AMP_TEST: true,
-      location: window.location,
-      document: window.document,
-    };
-    expect(getBootstrapBaseUrl(win)).to.equal(
-        'http://ads.localhost:9876/base/dist.3p/current/frame.max.html');
+    window.AMP_MODE = {test: true};
+    expect(getBootstrapBaseUrl(window)).to.equal(
+        'http://ads.localhost:9876/dist.3p/current/frame.max.html');
   });
 
   it('should pick the right bootstrap unique url (prod)', () => {
-    setModeForTesting({});
+    window.AMP_MODE = {};
     expect(getBootstrapBaseUrl(window)).to.match(
         /^https:\/\/d-\d+\.ampproject\.net\/\$\internal\w+\$\/frame\.html$/);
   });
@@ -211,20 +284,18 @@ describe('3p-frame', () => {
   });
 
   it('should prefetch bootstrap frame and JS', () => {
-    const preconnect = preconnectFor(window);
-    const origPreloadSupportValue = preconnect.preloadSupported_;
-    preconnect.preloadSupported_ = false;
-    prefetchBootstrap(window);
-    const fetches = document.querySelectorAll(
-        'link[rel=prefetch]');
-    expect(fetches).to.have.length(2);
-    expect(fetches[0].href).to.equal(
-        'http://ads.localhost:9876/dist.3p/current/frame.max.html');
-    expect(fetches[0].getAttribute('as')).to.equal('document');
-    expect(fetches[1].href).to.equal(
-        'https://3p.ampproject.net/$internalRuntimeVersion$/f.js');
-    expect(fetches[1].getAttribute('as')).to.equal('script');
-    preconnect.preloadSupported_ = origPreloadSupportValue;
+    window.AMP_MODE = {localDev: true};
+    preloadBootstrap(window, preconnect);
+    // Wait for visible promise
+    return Promise.resolve().then(() => {
+      const fetches = document.querySelectorAll(
+          'link[rel=prefetch],link[rel=preload]');
+      expect(fetches).to.have.length(2);
+      expect(fetches[0]).to.have.property('href',
+          'http://ads.localhost:9876/dist.3p/current/frame.max.html');
+      expect(fetches[1]).to.have.property('href',
+          'http://ads.localhost:9876/dist.3p/current/integration.js');
+    });
   });
 
   it('should make sub domains (unique)', () => {
@@ -263,11 +334,11 @@ describe('3p-frame', () => {
   });
 
   it('uses a unique name based on domain', () => {
-    const viewerMock = sandbox.mock(viewerFor(window));
+    const viewerMock = sandbox.mock(viewerForDoc(window.document));
     viewerMock.expects('getUnconfirmedReferrerUrl')
         .returns('http://acme.org/').twice();
 
-    setModeForTesting({});
+    window.AMP_MODE = {};
     const link = document.createElement('link');
     link.setAttribute('rel', 'canonical');
     link.setAttribute('href', 'https://foo.bar/baz');
@@ -275,19 +346,124 @@ describe('3p-frame', () => {
 
     const div = document.createElement('div');
     div.setAttribute('type', '_ping_');
-    div.getLayoutBox = function() {
+    div.setAttribute('width', 100);
+    div.setAttribute('height', 200);
+    div.getIntersectionChangeEntry = function() {
       return {
-        width: 100,
-        height: 200,
+        left: 0,
+        top: 0,
+        width: 0,
+        height: 0,
+        bottom: 0,
+        right: 0,
+        x: 0,
+        y: 0,
       };
     };
 
-    const name = getIframe(window, div).name;
-    resetServiceForTesting(window, 'bootstrapBaseUrl');
-    resetCountForTesting();
-    const newName = getIframe(window, div).name;
-    expect(name).to.match(/d-\d+.ampproject.net__ping__0/);
-    expect(newName).to.match(/d-\d+.ampproject.net__ping__0/);
-    expect(newName).not.to.equal(name);
+    container.appendChild(div);
+    if (iframeContextInName) {
+      const name = JSON.parse(getIframe(window, div).name);
+      resetBootstrapBaseUrlForTesting(window);
+      resetCountForTesting();
+      const newName = JSON.parse(getIframe(window, div).name);
+      expect(name.host).to.match(/d-\d+.ampproject.net/);
+      expect(name.type).to.match(/ping/);
+      expect(name.count).to.match(/1/);
+      expect(newName.host).to.match(/d-\d+.ampproject.net/);
+      expect(newName.type).to.match(/ping/);
+      expect(newName.count).to.match(/1/);
+      expect(newName).not.to.equal(name);
+    } else {
+      const name = getIframe(window, div).name;
+      resetBootstrapBaseUrlForTesting(window);
+      resetCountForTesting();
+      const newName = getIframe(window, div).name;
+      expect(name).to.match(/d-\d+.ampproject.net__ping__1/);
+      expect(newName).to.match(/d-\d+.ampproject.net__ping__1/);
+    }
+  });
+
+  describe('serializeMessage', () => {
+    it('should work without payload', () => {
+      const message = serializeMessage('msgtype', 'msgsentinel');
+      expect(message.indexOf('amp-')).to.equal(0);
+      expect(deserializeMessage(message)).to.deep.equal({
+        type: 'msgtype',
+        sentinel: 'msgsentinel',
+      });
+    });
+
+    it('should work with payload', () => {
+      const message = serializeMessage('msgtype', 'msgsentinel', {
+        type: 'type_override', // override should be ignored
+        sentinel: 'sentinel_override', // override should be ignored
+        x: 1,
+        y: 'abc',
+      });
+      expect(deserializeMessage(message)).to.deep.equal({
+        type: 'msgtype',
+        sentinel: 'msgsentinel',
+        x: 1,
+        y: 'abc',
+      });
+    });
+
+    it('should work with rtvVersion', () => {
+      const message = serializeMessage('msgtype', 'msgsentinel', {
+        type: 'type_override', // override should be ignored
+        sentinel: 'sentinel_override', // override should be ignored
+        x: 1,
+        y: 'abc',
+      }, 'rtv123');
+      expect(deserializeMessage(message)).to.deep.equal({
+        type: 'msgtype',
+        sentinel: 'msgsentinel',
+        x: 1,
+        y: 'abc',
+      });
+    });
+  });
+
+  describe('deserializeMessage', () => {
+    it('should deserialize valid message', () => {
+      const message = deserializeMessage(
+          'amp-{"type":"msgtype","sentinel":"msgsentinel","x":1,"y":"abc"}');
+      expect(message).to.deep.equal({
+        type: 'msgtype',
+        sentinel: 'msgsentinel',
+        x: 1,
+        y: 'abc',
+      });
+    });
+
+    it('should deserialize valid message with rtv version', () => {
+      const message = deserializeMessage(
+          'amp-rtv123{"type":"msgtype","sentinel":"msgsentinel",' +
+          '"x":1,"y":"abc"}');
+      expect(message).to.deep.equal({
+        type: 'msgtype',
+        sentinel: 'msgsentinel',
+        x: 1,
+        y: 'abc',
+      });
+    });
+
+    it('should return null if the input not a string', () => {
+      expect(deserializeMessage({x: 1, y: 'abc'})).to.be.null;
+    });
+
+    it('should return null if the input does not start with amp-', () => {
+      expect(deserializeMessage(
+          'noamp-{"type":"msgtype","sentinel":"msgsentinel"}')).to.be.null;
+    });
+
+    it('should return null if failed to parse the input', () => {
+      expect(deserializeMessage(
+          'amp-"type":"msgtype","sentinel":"msgsentinel"}')).to.be.null;
+
+      expect(deserializeMessage(
+          'amp-{"type":"msgtype"|"sentinel":"msgsentinel"}')).to.be.null;
+    });
   });
 });

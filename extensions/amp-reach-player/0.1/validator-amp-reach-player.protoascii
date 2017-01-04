@@ -15,9 +15,13 @@
 #
 
 tags: {  # amp-reach-player
-  tag_name: "script"
-  mandatory_parent: "head"
+  html_format: AMP
+  html_format: AMP4ADS
+  tag_name: "SCRIPT"
+  mandatory_parent: "HEAD"
   spec_name: "amp-reach-player extension .js script"
+  unique_warning: true
+  also_requires_tag_warning: "amp-reach-player"
   attrs: {
     name: "async"
     mandatory: true
@@ -36,7 +40,7 @@ tags: {  # amp-reach-player
   }
   attrs: {
     name: "type"
-    value: "text/javascript"
+    value_casei: "text/javascript"
   }
   cdata: {
     blacklisted_cdata_regex: {
@@ -44,13 +48,13 @@ tags: {  # amp-reach-player
       error_message: "contents"
     }
   }
-  # Uncomment once reference is available.
-  # spec_url: "https://www.ampproject.org/docs/reference/extended/amp-reach-player.html"
+  spec_url: "https://www.ampproject.org/docs/reference/extended/amp-reach-player.html"
 }
 tags: {  # <amp-reach-player>
-  tag_name: "amp-reach-player"
-  disallowed_ancestor: "head"
-  disallowed_ancestor: "amp-sidebar"
+  html_format: AMP
+  html_format: AMP4ADS
+  tag_name: "AMP-REACH-PLAYER"
+  disallowed_ancestor: "AMP-SIDEBAR"
   also_requires_tag: "amp-reach-player extension .js script"
   attrs: {
     name: "data-embed-id"
@@ -59,8 +63,7 @@ tags: {  # <amp-reach-player>
     value_regex: "[0-9a-z-]+"
   }
   attr_lists: "extended-amp-global"
-  # Uncomment once reference is available.
-  # spec_url: "https://github.com/ampproject/amphtml/blob/master/extensions/amp-reach-player/amp-reach-player.md"
+  spec_url: "https://www.ampproject.org/docs/reference/extended/amp-reach-player.html"
   amp_layout: {
     supported_layouts: FILL
     supported_layouts: FIXED

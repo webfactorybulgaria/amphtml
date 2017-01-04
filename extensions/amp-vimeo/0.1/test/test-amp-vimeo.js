@@ -35,9 +35,7 @@ describe('amp-vimeo', () => {
       if (opt_responsive) {
         vimeo.setAttribute('layout', 'responsive');
       }
-      iframe.doc.body.appendChild(vimeo);
-      vimeo.implementation_.layoutCallback();
-      return vimeo;
+      return iframe.addElement(vimeo);
     });
   }
 
@@ -48,8 +46,6 @@ describe('amp-vimeo', () => {
       expect(iframe.tagName).to.equal('IFRAME');
       expect(iframe.src).to.equal(
           'https://player.vimeo.com/video/123');
-      expect(iframe.getAttribute('width')).to.equal('111');
-      expect(iframe.getAttribute('height')).to.equal('222');
     });
   });
 
@@ -57,7 +53,7 @@ describe('amp-vimeo', () => {
     return getVimeo('234', true).then(vimeo => {
       const iframe = vimeo.querySelector('iframe');
       expect(iframe).to.not.be.null;
-      expect(iframe.className).to.match(/-amp-fill-content/);
+      expect(iframe.className).to.match(/i-amphtml-fill-content/);
     });
   });
 

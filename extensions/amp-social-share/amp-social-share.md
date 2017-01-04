@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-### <a name="amp-social-share"></a> `amp-social-share`
+# <a name="amp-social-share"></a>`amp-social-share`
 
 <table>
   <tr>
@@ -37,11 +37,11 @@ limitations under the License.
   </tr>
   <tr>
     <td class="col-fourty"><strong><a href="https://www.ampproject.org/docs/guides/responsive/control_layout.html">Supported Layouts</a></strong></td>
-    <td>CONTAINER, FILL, FIXED, FIXED_HEIGHT, FLEX_ITEM, NODISPLAY, RESPONSIVE</td>
+    <td>container, fill, fixed, fixed-height, flex-item, nodisplay, responsive</td>
   </tr>
   <tr>
     <td class="col-fourty"><strong>Examples</strong></td>
-    <td><a href="https://github.com/ampproject/amphtml/blob/master/examples/social-share.amp.html">social-share.amp.html</a>
+    <td><a href="https://ampbyexample.com/components/amp-social-share/">Annotated code example for amp-social-share</a>
     </td>
   </tr>
 </table>
@@ -82,7 +82,7 @@ __height__: default 44px
 #### Custom Styles:
 Sometimes you want to provide your own style. You can simply override the provided styles like the following: 
 ```css
-amp-social-share[type=twitter] {
+amp-social-share[type="twitter"] {
   background: red;
   background-image: url(datauri:svg/myownsvgicon);
 }
@@ -95,22 +95,27 @@ The element provides [some pre-configured providers](0.1/amp-social-share-config
     - url `optional` (defaults: `rel=canonical` URL)
     - text `optional` (defaults: Current page title)
 - facebook
-    - url `optional` (defaults: `rel=canonical` URL)
+    - href `optional` (defaults: `rel=canonical` URL)
+    - text `optional` (defaults: none)
+    - app_id `required` (defaults: none) Required by [Facebook share dialog](https://developers.facebook.com/docs/sharing/reference/share-dialog).
 - pinterest
     - url `optional` (defaults: `rel=canonical` URL)
 - linkedin
     - url `optional` (defaults: `rel=canonical` URL)
 - gplus
     - url `optional` (defaults: `rel=canonical` URL)
+- tumblr
+    - url `optional` (defaults: `rel=canonical` URL)
+    - name `optional` (defaults: Current page title)
 - email
-    - subject `optional` (defaults: Crrent page title)
+    - subject `optional` (defaults: Current page title)
     - body `optional` (defaults: `rel=canonical` URL)
 
 ### Un-configured Providers
-`amp-social-share` allows you to use any provider you'd like that is not pre-configured. By configuring the element with more attributes.
+`amp-social-share` allows you to use any provider you'd like that is not pre-configured by configuring the element with more attributes.
 
 #### Example
-The following example will create a share button through whatsapp, by setting `data-share-endpoint` attribute to the correct endpoint for whatsapp ustom protocol.
+The following example will create a share button through whatsapp, by setting `data-share-endpoint` attribute to the correct endpoint for whatsapp custom protocol.
 ```html
 <amp-social-share type="whatsapp"
                 layout="container"

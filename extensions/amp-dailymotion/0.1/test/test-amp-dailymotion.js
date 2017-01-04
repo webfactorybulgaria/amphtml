@@ -38,9 +38,7 @@ describe('amp-dailymotion', () => {
       if (optCustomSettings) {
         dailymotion.setAttribute('data-start', 123);
       }
-      iframe.doc.body.appendChild(dailymotion);
-      dailymotion.implementation_.layoutCallback();
-      return dailymotion;
+      return iframe.addElement(dailymotion);
     });
   }
 
@@ -51,8 +49,6 @@ describe('amp-dailymotion', () => {
       expect(iframe.tagName).to.equal('IFRAME');
       expect(iframe.src).to.equal(
           'https://www.dailymotion.com/embed/video/x2m8jpp?api=1&html=1&app=amp');
-      expect(iframe.getAttribute('width')).to.equal('111');
-      expect(iframe.getAttribute('height')).to.equal('222');
     });
   });
 
@@ -60,7 +56,7 @@ describe('amp-dailymotion', () => {
     return getDailymotion('x2m8jpp', true).then(dailymotion => {
       const iframe = dailymotion.querySelector('iframe');
       expect(iframe).to.not.be.null;
-      expect(iframe.className).to.match(/-amp-fill-content/);
+      expect(iframe.className).to.match(/i-amphtml-fill-content/);
     });
   });
 

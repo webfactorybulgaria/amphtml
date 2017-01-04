@@ -33,6 +33,7 @@ module.exports = function(config) {
       'test/fixtures/*.html': ['html2js'],
       'src/**/*.js': ['browserify'],
       'test/**/*.js': ['browserify'],
+      'ads/**/test/test-*.js': ['browserify'],
       'extensions/**/test/**/*.js': ['browserify'],
       'testing/**/*.js': ['browserify']
     },
@@ -44,23 +45,38 @@ module.exports = function(config) {
       bundleDelay: 900
     },
 
-    reporters: ['progress'],
+    reporters: [process.env.TRAVIS ? 'dots' : 'progress'],
 
     port: 9876,
 
     colors: true,
 
-    logLevel: config.LOG_WARN,
+    proxies: {
+      '/ads/': '/base/ads/',
+      '/dist/': '/base/dist/',
+      '/dist.3p/': '/base/dist.3p/',
+      '/examples/': '/base/examples/',
+      '/extensions/': '/base/extensions/',
+      '/src/': '/base/src/',
+      '/test/': '/base/test/',
+    },
+
+    logLevel: process.env.TRAVIS ? config.LOG_ERROR : config.LOG_WARN,
 
     autoWatch: true,
 
-    browsers: ['Chrome'],
+    browsers: ['Chrome_no_extensions'],
 
     customLaunchers: {
       /*eslint "google-camelcase/google-camelcase": 0*/
       Chrome_travis_ci: {
         base: 'Chrome',
-        flags: ['--no-sandbox'],
+        flags: ['--no-sandbox', '--disable-extensions',],
+      },
+      Chrome_no_extensions: {
+        base: 'Chrome',
+        // Dramatically speeds up iframe creation time.
+        flags: ['--disable-extensions'],
       },
       // SauceLabs configurations.
       // New configurations can be created here:
@@ -73,15 +89,25 @@ module.exports = function(config) {
         base: 'SauceLabs',
         browserName: 'chrome',
       },
-      SL_Chrome_37: {
+      SL_Chrome_45: {
         base: 'SauceLabs',
         browserName: 'chrome',
-        version: 37,
+        version: '45',
+      },
+      SL_iOS_8_4: {
+        base: 'SauceLabs',
+        browserName: 'iphone',
+        version: '8.4',
       },
       SL_iOS_9_1: {
         base: 'SauceLabs',
         browserName: 'iphone',
-        version: '9.1'
+        version: '9.1',
+      },
+      SL_iOS_10_0: {
+        base: 'SauceLabs',
+        browserName: 'iphone',
+        version: '10.0',
       },
       SL_Firefox_latest: {
         base: 'SauceLabs',

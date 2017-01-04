@@ -31,11 +31,11 @@ limitations under the License.
   </tr>
   <tr>
     <td class="col-fourty"><strong><a href="https://www.ampproject.org/docs/guides/responsive/control_layout.html">Supported Layouts</a></strong></td>
-    <td>FILL, FIXED, FIXED_HEIGHT, FLEX_ITEM, NODISPLAY, RESPONSIVE</td>
+    <td>fill, fixed, fixed-height, flex-item, nodisplay, responsive</td>
   </tr>
   <tr>
     <td width="40%"><strong>Examples</strong></td>
-    <td><a href="https://ampbyexample.com/components/amp-iframe">amp-iframe.html</a><br /><a href="https://github.com/ampproject/amphtml/blob/master/examples/everything.amp.html">everything.amp.html</a></td>
+    <td><a href="https://ampbyexample.com/components/amp-iframe/">Annotated code example for amp-iframe</a></td>
   </tr>
 </table>
 
@@ -58,11 +58,32 @@ Example:
 </amp-iframe>
 ```
 
+## Usage of amp-iframe for advertising
+
+`amp-iframe` **must not** be used for the primary purpose of displaying advertising. It is OK to use `amp-iframe` for the purpose of displaying videos, where part of the videos are advertising. This AMP policy may be enforced by not rendering the respective iframes.
+
+Advertising use cases should use [`amp-ad`](../amp-ad/amp-ad.md) instead.
+
+The reasons for this policy are that:
+
+- `amp-iframe` enforces sandboxing and the sandbox is also applied to child iframes. This means landing pages may be broken, even if the ad itself appears to work.
+- `amp-iframe` does not provide any mechanism to pass configuration to the iframe.
+- `amp-iframe` has no fully iframe controlled resize mechanism.
+- Viewability information may not be available to `amp-iframe`.
+
 ## Attributes
 
-### src, srcdoc, frameborder, allowfullscreen, allowtransparency
+### src
+
+The `src` attribute behaves mainly like on a standard iframe with one exception: the `#amp=1` fragment is added to the URL to allow
+source documents to know that they are embedded in the AMP context. This fragment is only added if the URL specified by `src` does
+not already have a fragment.
+
+### srcdoc, frameborder, allowfullscreen, allowtransparency, referrerpolicy
 
 The attributes above should all behave like they do on standard iframes.
+
+If `frameborder` is not specified, it will be set to `0` by default.
 
 ### sandbox
 
@@ -81,7 +102,8 @@ it's possible to resize an `amp-iframe` in runtime. To do so:
 
 1. The `amp-iframe` must be defined with `resizable` attribute;
 2. The `amp-iframe` must have `overflow` child element;
-3. The IFrame document has to send a `embed-size` request as a window message.
+3. The iframe document has to send a `embed-size` request as a window message.
+4. The `embed-size` request will be denied if the request height is less than certain threshold (100px).
 
 Notice that `resizable` overrides `scrolling` value to `no`.
 
@@ -96,7 +118,7 @@ Example of `amp-iframe` with `overflow` element:
 </amp-iframe>
 ```
 
-Example of Iframe resize request:
+Example of iframe resize request:
 ```javascript
 window.parent.postMessage({
   sentinel: 'amp',
@@ -114,8 +136,8 @@ resize the `amp-iframe` since it's triggered by a user action.
 Here are some factors that affect how fast the resize will be executed:
 
 - Whether the resize is triggered by the user action;
-- Whether the resize is requested for a currently active Iframe;
-- Whether the resize is requested for an Iframe below the viewport or above the viewport.
+- Whether the resize is requested for a currently active iframe;
+- Whether the resize is requested for an iframe below the viewport or above the viewport.
 
 ## Iframe with Placeholder
 It is possible to have an `amp-iframe` appear on the top of a document when the `amp-iframe` has a `placeholder` element as shown in the example below.
@@ -129,7 +151,7 @@ It is possible to have an `amp-iframe` appear on the top of a document when the 
 </amp-iframe>
 ```
 - The `amp-iframe` must contain an element with the `placeholder` attribute, (for instance an `amp-img` element) which would be rendered as a placeholder till the iframe is ready to be displayed.
-- Iframe readiness can be known by listening to `onload` of the iframe or an `embed-ready` postMessage which would be sent by the Iframe document, whichever comes first.
+- Iframe readiness can be known by listening to `onload` of the iframe or an `embed-ready` postMessage which would be sent by the iframe document, whichever comes first.
 
 Example of Iframe embed-ready request:
 ```javascript
@@ -141,19 +163,19 @@ window.parent.postMessage({
 
 ## Iframe viewability
 
-Iframes can send a  `send-intersection` message to its parent to start receiving IntersectionObserver style [change records](http://rawgit.com/slightlyoff/IntersectionObserver/master/index.html#intersectionobserverentry) of the iframe's intersection with the parent viewport.
+Iframes can send a  `send-intersections` message to its parent to start receiving IntersectionObserver style [change records](http://rawgit.com/slightlyoff/IntersectionObserver/master/index.html#intersectionobserverentry) of the iframe's intersection with the parent viewport.
 
-Example of Iframe `send-intersection` request:
+Example of iframe `send-intersections` request:
 ```javascript
 window.parent.postMessage({
   sentinel: 'amp',
-  type: 'send-intersection'
+  type: 'send-intersections'
 }, '*');
 ```
 
-The Iframe can listen to an `intersection` message from the parent window to receive the intersection data.
+The iframe can listen to an `intersection` message from the parent window to receive the intersection data.
 
-Example of Iframe `send-intersection` request:
+Example of iframe `send-intersections` request:
 ```javascript
 window.addEventListener('message', function(event) {
   const listener = function(event) {
@@ -170,7 +192,7 @@ window.addEventListener('message', function(event) {
 });
 ```
 
-The intersection message would be sent by the parent to the iframe when the iframe moves in or out of the viewport (or is partially visibile), when the iframe is scrolled or resized.
+The intersection message would be sent by the parent to the iframe when the iframe moves in or out of the viewport (or is partially visible), when the iframe is scrolled or resized.
 
 ## Tracking/Analytics iframes
 

@@ -15,9 +15,13 @@
 #
 
 tags: {  # amp-brid-player
-  tag_name: "script"
+  html_format: AMP
+  html_format: AMP4ADS
+  tag_name: "SCRIPT"
   spec_name: "amp-brid-player extension .js script"
-  mandatory_parent: "head"
+  mandatory_parent: "HEAD"
+  unique_warning: true
+  also_requires_tag_warning: "amp-brid-player"
   attrs: {
     name: "async"
     mandatory: true
@@ -36,7 +40,7 @@ tags: {  # amp-brid-player
   }
   attrs: {
     name: "type"
-    value: "text/javascript"
+    value_casei: "text/javascript"
   }
   cdata: {
     blacklisted_cdata_regex: {
@@ -44,13 +48,13 @@ tags: {  # amp-brid-player
       error_message: "contents"
     }
   }
-  # TODO(gregable): Replace me with an ampproject.org URL eventually.
-  spec_url: "https://github.com/ampproject/amphtml/blob/master/extensions/amp-brid-player/amp-brid-player.md"
+  spec_url: "https://www.ampproject.org/docs/reference/extended/amp-brid-player.html"
 }
 tags: {  # <amp-brid-player>
-  tag_name: "amp-brid-player"
-  disallowed_ancestor: "head"
-  disallowed_ancestor: "amp-sidebar"
+  html_format: AMP
+  html_format: AMP4ADS
+  tag_name: "AMP-BRID-PLAYER"
+  disallowed_ancestor: "AMP-SIDEBAR"
   also_requires_tag: "amp-brid-player extension .js script"
   attrs: {
     name: "data-partner"
@@ -73,8 +77,7 @@ tags: {  # <amp-brid-player>
     value_regex: "[0-9]+"
   }
   attr_lists: "extended-amp-global"
-  # TODO(gregable): Replace me with an ampproject.org URL eventually.
-  spec_url: "https://github.com/ampproject/amphtml/blob/master/extensions/amp-brid-player/amp-brid-player.md"
+  spec_url: "https://www.ampproject.org/docs/reference/extended/amp-brid-player.html"
   amp_layout: {
     supported_layouts: FILL
     supported_layouts: FIXED

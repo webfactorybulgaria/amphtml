@@ -15,9 +15,13 @@
 #
 
 tags: {  # amp-kaltura-player
-  tag_name: "script"
+  html_format: AMP
+  html_format: AMP4ADS
+  tag_name: "SCRIPT"
   spec_name: "amp-kaltura-player extension .js script"
-  mandatory_parent: "head"
+  mandatory_parent: "HEAD"
+  unique_warning: true
+  also_requires_tag_warning: "amp-kaltura-player"
   attrs: {
     name: "async"
     mandatory: true
@@ -36,7 +40,7 @@ tags: {  # amp-kaltura-player
   }
   attrs: {
     name: "type"
-    value: "text/javascript"
+    value_casei: "text/javascript"
   }
   cdata: {
     blacklisted_cdata_regex: {
@@ -49,9 +53,10 @@ tags: {  # amp-kaltura-player
 # amp-kaltura-player either comes with a video-id attribute, or with
 # a data-videoid attribute.
 tags: {  # <amp-kaltura-player>
-  tag_name: "amp-kaltura-player"
-  disallowed_ancestor: "head"
-  disallowed_ancestor: "amp-sidebar"
+  html_format: AMP
+  html_format: AMP4ADS
+  tag_name: "AMP-KALTURA-PLAYER"
+  disallowed_ancestor: "AMP-SIDEBAR"
   also_requires_tag: "amp-kaltura-player extension .js script"
 
   attrs: { name: "data-partner" mandatory: true }

@@ -16,14 +16,14 @@
 
 import {
   BaseTemplate,
+  installTemplatesService,
   registerExtendedTemplate,
-  templatesFor,
-} from '../../src/template';
+} from '../../src/service/template-impl';
 
 
 describe('Template', () => {
 
-  const templates = templatesFor(window);
+  const templates = installTemplatesService(window);
 
   class TemplateImpl extends BaseTemplate {
     render(data) {
@@ -228,61 +228,20 @@ describe('Template', () => {
           expect(res[1].textContent).to.equal('abc2');
         });
   });
-
-  it('should replace target attribute in anchors', () => {
-    const prerendered = document.createElement('div');
-
-    const anchorWithoutTarget = document.createElement('a');
-    anchorWithoutTarget.setAttribute('href', 'https://acme.com/');
-    prerendered.appendChild(anchorWithoutTarget);
-
-    const anchorWithoutHref = document.createElement('a');
-    anchorWithoutHref.setAttribute('on', 'tap:my-element');
-    prerendered.appendChild(anchorWithoutHref);
-
-    const anchorWithTargetSelf = document.createElement('a');
-    anchorWithTargetSelf.setAttribute('href', 'https://acme.com/');
-    anchorWithTargetSelf.setAttribute('target', '_self');
-    prerendered.appendChild(anchorWithTargetSelf);
-
-    const anchorWithTargetTop = document.createElement('a');
-    anchorWithTargetTop.setAttribute('href', 'https://acme.com/');
-    anchorWithTargetTop.setAttribute('target', '_top');
-    prerendered.appendChild(anchorWithTargetTop);
-
-    const anchorWithTargetBlank = document.createElement('a');
-    anchorWithTargetBlank.setAttribute('href', 'https://acme.com/');
-    anchorWithTargetBlank.setAttribute('target', '_blank');
-    prerendered.appendChild(anchorWithTargetBlank);
-
-    const anchorWithTargetParent = document.createElement('a');
-    anchorWithTargetParent.setAttribute('href', 'https://acme.com/');
-    anchorWithTargetParent.setAttribute('target', '_parent');
-    prerendered.appendChild(anchorWithTargetParent);
-
-    templates.render_({render: () => prerendered});
-
-    // The unknown target is replaced with "_blank", at least until #1572
-    // is resolved.
-    expect(anchorWithoutTarget.getAttribute('target')).to.equal('_blank');
-
-    // No target substitution is done for anchors without href.
-    expect(anchorWithoutHref.getAttribute('target')).to.be.null;
-
-    // All others require _blank.
-    expect(anchorWithTargetSelf.getAttribute('target')).to.equal('_blank');
-    expect(anchorWithTargetTop.getAttribute('target')).to.equal('_blank');
-    expect(anchorWithTargetBlank.getAttribute('target')).to.equal('_blank');
-    expect(anchorWithTargetParent.getAttribute('target')).to.equal('_blank');
-  });
 });
 
 
 describe('BaseTemplate', () => {
 
+  let templateElement;
+
+  beforeEach(() => {
+    templateElement = document.createElement('div');
+  });
+
   it('should require render override', () => {
     expect(() => {
-      new BaseTemplate().render();
+      new BaseTemplate(templateElement).render();
     }).to.throw(/Not implemented/);
   });
 
@@ -290,7 +249,7 @@ describe('BaseTemplate', () => {
     const root = document.createElement('div');
     const element1 = document.createElement('div');
     root.appendChild(element1);
-    expect(new BaseTemplate().unwrap(root)).to.equal(element1);
+    expect(new BaseTemplate(templateElement).unwrap(root)).to.equal(element1);
   });
 
   it('should unwrap with empty/whitespace text', () => {
@@ -299,20 +258,20 @@ describe('BaseTemplate', () => {
     root.appendChild(document.createTextNode('   '));
     root.appendChild(element1);
     root.appendChild(document.createTextNode(' \n\t  '));
-    expect(new BaseTemplate().unwrap(root)).to.equal(element1);
+    expect(new BaseTemplate(templateElement).unwrap(root)).to.equal(element1);
   });
 
   it('should NOT unwrap multiple elements', () => {
     const root = document.createElement('div');
     root.appendChild(document.createElement('div'));
     root.appendChild(document.createElement('div'));
-    expect(new BaseTemplate().unwrap(root)).to.equal(root);
+    expect(new BaseTemplate(templateElement).unwrap(root)).to.equal(root);
   });
 
   it('should NOT unwrap with non-empty/whitespace text', () => {
     const root = document.createElement('div');
     root.appendChild(document.createTextNode('a'));
     root.appendChild(document.createElement('div'));
-    expect(new BaseTemplate().unwrap(root)).to.equal(root);
+    expect(new BaseTemplate(templateElement).unwrap(root)).to.equal(root);
   });
 });

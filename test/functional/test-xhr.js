@@ -15,28 +15,41 @@
  */
 
 import * as sinon from 'sinon';
+import {utf8FromArrayBuffer} from '../../extensions/amp-a4a/0.1/amp-a4a';
 import {
   installXhrService,
   fetchPolyfill,
   FetchResponse,
+  assertSuccess,
 } from '../../src/service/xhr-impl';
+import {getCookie} from '../../src/cookies';
+
 
 describe('XHR', function() {
   let sandbox;
   let requests;
+  const location = {href: 'https://acme.com/path'};
+  const nativeWin = {
+    location,
+    fetch: window.fetch,
+  };
+
+  const polyfillWin = {
+    location,
+    fetch: fetchPolyfill,
+  };
 
   // Given XHR calls give tests more time.
   this.timeout(5000);
 
   const scenarios = [
-    {xhr: installXhrService({
-      fetch: window.fetch,
-      location: {href: 'https://acme.com/path'},
-    }), desc: 'Native'},
-    {xhr: installXhrService({
-      fetch: fetchPolyfill,
-      location: {href: 'https://acme.com/path'},
-    }), desc: 'Polyfill'},
+    {
+      xhr: installXhrService(nativeWin),
+      desc: 'Native',
+    }, {
+      xhr: installXhrService(polyfillWin),
+      desc: 'Polyfill',
+    },
   ];
 
   function setupMockXhr() {
@@ -58,6 +71,7 @@ describe('XHR', function() {
 
   beforeEach(() => {
     sandbox = sinon.sandbox.create();
+    location.href = 'https://acme.com/path';
   });
 
   afterEach(() => {
@@ -67,7 +81,7 @@ describe('XHR', function() {
   scenarios.forEach(test => {
     const xhr = test.xhr;
 
-    // Since if its the Native fetch, it wont use the XHR object so
+    // Since if it's the Native fetch, it won't use the XHR object so
     // mocking and testing the request becomes not doable.
     if (test.desc != 'Native') {
 
@@ -170,6 +184,12 @@ describe('XHR', function() {
           }).to.throw(/Source origin is not allowed/);
         });
 
+        it('should not include __amp_source_origin if ampCors ' +
+            'set to false', () => {
+          xhr.fetchJson('/get', {ampCors: false});
+          expect(noOrigin(requests[0].url)).to.equal('/get');
+        });
+
         it('should accept AMP origin when received in response', () => {
           const promise = xhr.fetchJson('/get');
           requests[0].respond(200, {
@@ -215,18 +235,119 @@ describe('XHR', function() {
       });
     }
 
+    describe('AMP-Same-Origin', () => {
+      it('should not be set for cross origin requests', () => {
+        const init = {};
+        xhr.fetchJson('/whatever', init);
+        expect(init['headers']['AMP-Same-Origin']).to.be.undefined;
+      });
+
+      it('should be set for all same origin GET requests', () => {
+        const init = {};
+        location.href = '/path';
+        xhr.fetchJson('/whatever', init);
+        expect(init['headers']['AMP-Same-Origin']).to.equal('true');
+      });
+
+      it('should be set for all same origin POST requests', () => {
+        const init = {method: 'post', body: {}};
+        location.href = '/path';
+        xhr.fetchJson('/whatever', init);
+        expect(init['headers']['AMP-Same-Origin']).to.equal('true');
+      });
+
+      it('should check origin not source origin', () => {
+        let init = {method: 'post', body: {}};
+        location.href = 'https://cdn.ampproject.org/c/s/example.com/hello/path';
+        xhr.fetchJson('https://example.com/what/ever', init);
+        expect(init['headers']['AMP-Same-Origin']).to.be.undefined;
+
+        init = {method: 'post', body: {}};
+        location.href = 'https://example.com/hello/path';
+        xhr.fetchJson('https://example.com/what/ever', init);
+        expect(init['headers']['AMP-Same-Origin']).to.equal('true');
+      });
+    });
+
     describe(test.desc, () => {
 
+      describe('assertSuccess', () => {
+        function createResponseInstance(body, init) {
+          if (test.desc == 'Native' && 'Response' in Window) {
+            return new Response(body, init);
+          } else {
+            init.responseText = body;
+            return new FetchResponse(init);
+          }
+        }
+        const mockXhr = {
+          status: 200,
+          headers: {
+            'Content-Type': 'plain/text',
+          },
+          getResponseHeader: () => '',
+        };
+
+        it('should resolve if success', () => {
+          mockXhr.status = 200;
+          return assertSuccess(createResponseInstance('', mockXhr))
+              .then(response => {
+                expect(response.status).to.equal(200);
+              }).should.not.be.rejected;
+        });
+
+        it('should reject if error', () => {
+          mockXhr.status = 500;
+          return assertSuccess(createResponseInstance('', mockXhr))
+              .then(response => {
+                expect(response.status).to.equal(500);
+              }).should.be.rejectedWith(/HTTP error 500/);
+        });
+
+        it('should parse json content when error', () => {
+          mockXhr.status = 500;
+          mockXhr.responseText = '{"a": "hello"}';
+          mockXhr.headers['Content-Type'] = 'application/json';
+          mockXhr.getResponseHeader = () => 'application/json';
+          return assertSuccess(createResponseInstance('{"a": 2}', mockXhr))
+              .catch(error => {
+                expect(error.responseJson).to.be.defined;
+                expect(error.responseJson.a).to.equal(2);
+              });
+        });
+
+        it('should parse json content with charset when error', () => {
+          mockXhr.status = 500;
+          mockXhr.responseText = '{"a": "hello"}';
+          mockXhr.headers['Content-Type'] = 'application/json; charset=utf-8';
+          mockXhr.getResponseHeader = () => 'application/json; charset=utf-8';
+          return assertSuccess(createResponseInstance('{"a": 2}', mockXhr))
+              .catch(error => {
+                expect(error.responseJson).to.be.defined;
+                expect(error.responseJson.a).to.equal(2);
+              });
+        });
+
+        it('should not resolve after rejecting promise', () => {
+          mockXhr.status = 500;
+          mockXhr.responseText = '{"a": "hello"}';
+          mockXhr.headers['Content-Type'] = 'application/json';
+          mockXhr.getResponseHeader = () => 'application/json';
+          return assertSuccess(createResponseInstance('{"a": 2}', mockXhr))
+              .should.not.be.fulfilled;
+        });
+      });
+
       it('should do simple JSON fetch', () => {
-        return xhr.fetchJson('https://httpbin.org/get?k=v1').then(res => {
+        return xhr.fetchJson('http://localhost:31862/get?k=v1').then(res => {
           expect(res).to.exist;
           expect(res['args']['k']).to.equal('v1');
         });
       });
 
       it('should redirect fetch', () => {
-        const url = 'https://httpbin.org/redirect-to?url=' + encodeURIComponent(
-            'https://httpbin.org/get?k=v2');
+        const url = 'http://localhost:31862/redirect-to?url=' + encodeURIComponent(
+            'http://localhost:31862/get?k=v2');
         return xhr.fetchJson(url).then(res => {
           expect(res).to.exist;
           expect(res['args']['k']).to.equal('v2');
@@ -234,7 +355,7 @@ describe('XHR', function() {
       });
 
       it('should fail fetch for 400-error', () => {
-        const url = 'https://httpbin.org/status/404';
+        const url = 'http://localhost:31862/status/404';
         return xhr.fetchJson(url).then(unusedRes => {
           return 'SUCCESS';
         }, error => {
@@ -245,7 +366,7 @@ describe('XHR', function() {
       });
 
       it('should fail fetch for 500-error', () => {
-        const url = 'https://httpbin.org/status/500';
+        const url = 'http://localhost:31862/status/500';
         return xhr.fetchJson(url).then(unusedRes => {
           return 'SUCCESS';
         }, error => {
@@ -258,30 +379,39 @@ describe('XHR', function() {
 
       it('should NOT succeed CORS setting cookies without credentials', () => {
         const cookieName = 'TEST_CORS_' + Math.round(Math.random() * 10000);
-        const url = 'https://httpbin.org/cookies/set?' + cookieName + '=v1';
+        const url = 'http://localhost:31862/cookies/set?' + cookieName + '=v1';
         return xhr.fetchJson(url).then(res => {
           expect(res).to.exist;
-          expect(res['cookies'][cookieName]).to.be.undefined;
+          expect(getCookie(window, cookieName)).to.be.null;
         });
       });
 
       it('should succeed CORS setting cookies with credentials', () => {
         const cookieName = 'TEST_CORS_' + Math.round(Math.random() * 10000);
-        const url = 'https://httpbin.org/cookies/set?' + cookieName + '=v1';
+        const url = 'http://localhost:31862/cookies/set?' + cookieName + '=v1';
         return xhr.fetchJson(url, {credentials: 'include'}).then(res => {
           expect(res).to.exist;
-          expect(res['cookies'][cookieName]).to.equal('v1');
+          expect(getCookie(window, cookieName)).to.equal('v1');
+        });
+      });
+
+      it('should ignore CORS setting cookies w/omit credentials', () => {
+        const cookieName = 'TEST_CORS_' + Math.round(Math.random() * 10000);
+        const url = 'http://localhost:31862/cookies/set?' + cookieName + '=v1';
+        return xhr.fetchJson(url, {credentials: 'omit'}).then(res => {
+          expect(res).to.exist;
+          expect(getCookie(window, cookieName)).to.be.null;
         });
       });
 
       it('should NOT succeed CORS with invalid credentials', () => {
         expect(() => {
           xhr.fetchJson('https://acme.org/', {credentials: null});
-        }).to.throw(/Only credentials=include support: null/);
+        }).to.throw(/Only credentials=include|omit support: null/);
       });
 
       it('should expose HTTP headers', () => {
-        const url = 'https://httpbin.org/response-headers?' +
+        const url = 'http://localhost:31862/response-headers?' +
             'AMP-Header=Value1&Access-Control-Expose-Headers=AMP-Header';
         return xhr.fetchAmpCors_(url).then(res => {
           expect(res.headers.get('AMP-Header')).to.equal('Value1');
@@ -290,7 +420,6 @@ describe('XHR', function() {
     });
 
     describe('#fetchDocument', () => {
-
       it('should be able to fetch a document', () => {
         setupMockXhr();
         expect(requests[0]).to.be.undefined;
@@ -357,10 +486,65 @@ describe('XHR', function() {
         });
       });
     });
+
+    describe('#fetchText', () => {
+      const TEST_TEXT = 'test text';
+      let fetchStub;
+
+      beforeEach(() => {
+        const mockXhr = {
+          status: 200,
+          responseText: TEST_TEXT,
+        };
+        fetchStub = sandbox.stub(xhr, 'fetchAmpCors_',
+            () => Promise.resolve(new FetchResponse(mockXhr)));
+      });
+
+      it('should be able to fetch a document', () => {
+        const promise = xhr.fetchText('/text.html');
+        expect(fetchStub.calledWith('/text.html', {
+          method: 'GET',
+          headers: {'Accept': 'text/plain'},
+        })).to.be.true;
+        return promise.then(text => {
+          expect(text).to.equal(TEST_TEXT);
+        });
+      });
+    });
+
+    describe('#fetch ' + test.desc, () => {
+      const creative = '<html><body>This is a creative</body></html>';
+
+      // Using the Native fetch, we can't mock the XHR request, so an actual
+      // HTTP request would be sent to the server.  Only execute this test
+      // when we're on the PolyFill case, so that we can mock the XHR and
+      // control the response.
+      if (test.desc != 'Native') {
+        it('should be able to fetch a response', () => {
+          setupMockXhr();
+          expect(requests[0]).to.be.undefined;
+          const promise = xhr.fetch(
+            '/index.html').then(response => {
+              expect(response.headers.get('X-foo-header')).to.equal('foo data');
+              expect(response.headers.get('X-bar-header')).to.equal('bar data');
+              response.arrayBuffer().then(
+                bytes => utf8FromArrayBuffer(bytes)).then(text => {
+                  expect(text).to.equal(creative);
+                });
+            });
+          requests[0].respond(200, {
+            'Content-Type': 'text/xml',
+            'X-foo-header': 'foo data',
+            'X-bar-header': 'bar data',
+          }, creative);
+          return promise;
+        });
+      }
+    });
   });
 
   scenarios.forEach(test => {
-    const url = 'https://httpbin.org/post';
+    const url = 'http://localhost:31862/post';
 
     describe(test.desc + ' POST', () => {
       const xhr = test.xhr;

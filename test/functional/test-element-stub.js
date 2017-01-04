@@ -14,32 +14,27 @@
  * limitations under the License.
  */
 
-import {ElementStub} from '../../src/element-stub';
-import {
-    createIframePromise,
-    doNotLoadExternalResourcesInTest,
-} from '../../testing/iframe';
-import {resetExtensionScriptInsertedOrPresentForTesting,}
-    from '../../src/insert-extension';
+import {ElementStub, resetLoadingCheckForTests} from '../../src/element-stub';
+import {createIframePromise} from '../../testing/iframe';
 import '../../extensions/amp-ad/0.1/amp-ad';
 import '../../extensions/amp-analytics/0.1/amp-analytics';
+import '../../extensions/amp-video/0.1/amp-video';
 
 describe('test-element-stub', () => {
 
   let iframe;
 
   afterEach(() => {
-    resetExtensionScriptInsertedOrPresentForTesting();
+    resetLoadingCheckForTests();
   });
 
   function getElementStubIframe(name) {
     return createIframePromise().then(f => {
-      doNotLoadExternalResourcesInTest(f.win);
       iframe = f;
       const testElement = iframe.doc.createElement(name);
       testElement.setAttribute('width', '300');
       testElement.setAttribute('height', '250');
-      testElement.setAttribute('type', 'a9');
+      testElement.setAttribute('type', '_ping_');
       testElement.setAttribute('data-aax_size', '300*250');
       testElement.setAttribute('data-aax_pubname', 'abc123');
       testElement.setAttribute('data-aax_src', '302');
@@ -47,15 +42,7 @@ describe('test-element-stub', () => {
       link.setAttribute('rel', 'canonical');
       link.setAttribute('href', 'blah');
       iframe.doc.head.appendChild(link);
-      return iframe.addElement(testElement);
-    });
-  }
-
-  function getAnalyticsIframe() {
-    return createIframePromise().then(f => {
-      iframe = f;
-      const testElement = iframe.doc.createElement('amp-analytics');
-      return iframe.addElement(testElement);
+      iframe.doc.getElementById('parent').appendChild(testElement);
     });
   }
 
@@ -86,18 +73,15 @@ describe('test-element-stub', () => {
     });
   });
 
-  it('not insert script when element is not amp-ad amp-embed', () => {
-    return getAnalyticsIframe().then(() => {
-      resetExtensionScriptInsertedOrPresentForTesting('amp-analytics');
-      expect(iframe.doc.querySelectorAll('amp-analytics')).to.have.length(1);
-      expect(iframe.doc.head.querySelectorAll(
-          '[custom-element="amp-analytics"]')).to.have.length(0);
+  it('insert script for amp-video when script is not included', () => {
+    return getElementStubIframe('amp-video').then(() => {
+      expect(iframe.doc.querySelectorAll('amp-video')).to.have.length(1);
+      expect(iframe.doc.head.querySelectorAll('[custom-element="amp-video"]'))
+          .to.have.length(0);
       new ElementStub(iframe.doc.body.querySelector('#parent')
           .firstChild);
-      expect(iframe.doc.head.querySelectorAll('[custom-element="amp-ad"]'))
-          .to.have.length(0);
-      expect(iframe.doc.head.querySelectorAll(
-          '[custom-element="amp-analytics"]')).to.have.length(0);
+      expect(iframe.doc.head.querySelectorAll('[custom-element="amp-video"]'))
+          .to.have.length(1);
     });
   });
 });

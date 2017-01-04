@@ -14,7 +14,11 @@
  * limitations under the License.
  */
 
-import {openLoginDialog} from '../login-dialog';
+import {
+  WebLoginDialog,
+  openLoginDialog,
+} from '../login-dialog';
+import {installDocService} from '../../../../src/service/ampdoc-impl';
 import * as sinon from 'sinon';
 
 const RETURN_URL_ESC = encodeURIComponent('http://localhost:8000/extensions' +
@@ -38,7 +42,7 @@ describe('ViewerLoginDialog', () => {
         }
         return null;
       },
-      sendMessage: () => {},
+      sendMessageAwaitResponse: () => {},
     };
 
     windowApi = {
@@ -46,6 +50,10 @@ describe('ViewerLoginDialog', () => {
         'viewer': {obj: viewer},
       },
       screen: {width: 1000, height: 1000},
+      document: {
+        nodeType: /* DOCUMENT */ 9,
+        body: {},
+      },
       open: () => {
         throw new Error('Not allowed');
       },
@@ -59,6 +67,8 @@ describe('ViewerLoginDialog', () => {
         throw new Error('Not allowed');
       },
     };
+    windowApi.document.defaultView = windowApi;
+    installDocService(windowApi, /* isSingleDoc */ true);
   });
 
   afterEach(() => {
@@ -66,7 +76,7 @@ describe('ViewerLoginDialog', () => {
   });
 
   it('should delegate to viewer with url', () => {
-    const stub = sandbox.stub(viewer, 'sendMessage',
+    const stub = sandbox.stub(viewer, 'sendMessageAwaitResponse',
         () => Promise.resolve('#success=yes'));
     return openLoginDialog(windowApi, 'http://acme.com/login').then(res => {
       expect(res).to.equal('#success=yes');
@@ -75,12 +85,11 @@ describe('ViewerLoginDialog', () => {
       expect(stub.firstCall.args[1]).to.deep.equal({
         'url': 'http://acme.com/login?return=RETURN_URL',
       });
-      expect(stub.firstCall.args[2]).to.be.true;
     });
   });
 
   it('should delegate to viewer with url promise', () => {
-    const stub = sandbox.stub(viewer, 'sendMessage',
+    const stub = sandbox.stub(viewer, 'sendMessageAwaitResponse',
         () => Promise.resolve('#success=yes'));
     const urlPromise = Promise.resolve('http://acme.com/login');
     return openLoginDialog(windowApi, urlPromise).then(res => {
@@ -90,12 +99,11 @@ describe('ViewerLoginDialog', () => {
       expect(stub.firstCall.args[1]).to.deep.equal({
         'url': 'http://acme.com/login?return=RETURN_URL',
       });
-      expect(stub.firstCall.args[2]).to.be.true;
     });
   });
 
   it('should fail when url promise fails', () => {
-    sandbox.stub(viewer, 'sendMessage',
+    sandbox.stub(viewer, 'sendMessageAwaitResponse',
         () => Promise.resolve('#success=yes'));
     const urlPromise = Promise.reject('expected');
     return openLoginDialog(windowApi, urlPromise).then(() => {
@@ -106,7 +114,7 @@ describe('ViewerLoginDialog', () => {
   });
 
   it('should fail when viewer fails', () => {
-    sandbox.stub(viewer, 'sendMessage',
+    sandbox.stub(viewer, 'sendMessageAwaitResponse',
         () => Promise.reject('expected'));
     return openLoginDialog(windowApi, 'http://acme.com/login').then(() => {
       throw new Error('must not be here');
@@ -116,7 +124,7 @@ describe('ViewerLoginDialog', () => {
   });
 
   it('should have correct URL with other parameters', () => {
-    const stub = sandbox.stub(viewer, 'sendMessage',
+    const stub = sandbox.stub(viewer, 'sendMessageAwaitResponse',
         () => Promise.resolve('#success=yes'));
     const url = 'http://acme.com/login?a=b';
     return openLoginDialog(windowApi, url).then(() => {
@@ -127,7 +135,7 @@ describe('ViewerLoginDialog', () => {
   });
 
   it('should allow alternative form of return URL', () => {
-    const stub = sandbox.stub(viewer, 'sendMessage',
+    const stub = sandbox.stub(viewer, 'sendMessageAwaitResponse',
         () => Promise.resolve('#success=yes'));
     const url = 'http://acme.com/login?a=b&ret1=RETURN_URL';
     return openLoginDialog(windowApi, url).then(() => {
@@ -163,6 +171,10 @@ describe('WebLoginDialog', () => {
         'viewer': {obj: viewer},
       },
       open: () => {},
+      document: {
+        nodeType: /* DOCUMENT */ 9,
+        body: {},
+      },
       location: {
         protocol: 'http:',
         host: 'localhost:8000',
@@ -183,7 +195,9 @@ describe('WebLoginDialog', () => {
       clearInterval: intervalId => window.clearInterval(intervalId),
     };
     windowApi = windowObj;
+    windowApi.document.defaultView = windowApi;
     windowMock = sandbox.mock(windowApi);
+    installDocService(windowApi, /* isSingleDoc */ true);
 
     dialogUrl = null;
     dialog = {
@@ -391,22 +405,21 @@ describe('WebLoginDialog', () => {
     const urlPromise = new Promise(resolve => {
       urlResolver = resolve;
     });
-    const promise = openLoginDialog(windowApi, urlPromise);
-    return Promise.resolve()
-        .then(() => {
-          urlResolver('http://acme.com/login?a=1');
-          return urlPromise;
-        })
-        .then(() => {
-          expect(dialogUrl).to.be.equal(
-            'http://acme.com/login?a=1&return=' + RETURN_URL_ESC);
-          succeed();
-          return promise;
-        })
-        .then(result => {
-          expect(result).to.equal('#success=true');
-          expect(windowApi.messageListener).to.not.exist;
-        });
+    const dialogObj = new WebLoginDialog(windowApi, viewer, urlPromise);
+    const promise = dialogObj.open();
+    expect(dialogObj.dialogReadyPromise_).to.be.ok;
+    urlResolver('http://acme.com/login?a=1');
+    return urlPromise.then(() => {
+      return dialogObj.dialogReadyPromise_;
+    }).then(() => {
+      expect(dialogUrl).to.be.equal(
+        'http://acme.com/login?a=1&return=' + RETURN_URL_ESC);
+      succeed();
+      return promise;
+    }).then(result => {
+      expect(result).to.equal('#success=true');
+      expect(windowApi.messageListener).to.not.exist;
+    });
   });
 
   it('should fail when URL promise is rejected', () => {

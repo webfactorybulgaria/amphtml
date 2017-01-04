@@ -41,11 +41,11 @@ export class PinItButton {
 
   /** @param {!Element} rootElement */
   constructor(rootElement) {
-    user.assert(rootElement.getAttribute('data-url'),
+    user().assert(rootElement.getAttribute('data-url'),
       'The data-url attribute is required for Pin It buttons');
-    user.assert(rootElement.getAttribute('data-media'),
+    user().assert(rootElement.getAttribute('data-media'),
       'The data-media attribute is required for Pin It buttons');
-    user.assert(rootElement.getAttribute('data-description'),
+    user().assert(rootElement.getAttribute('data-description'),
       'The data-description attribute is required for Pin It buttons');
     this.element = rootElement;
     this.xhr = xhrFor(rootElement.ownerDocument.defaultView);
@@ -74,7 +74,9 @@ export class PinItButton {
    */
   fetchCount() {
     const url = `https://widgets.pinterest.com/v1/urls/count.json?return_jsonp=false&url=${this.url}`;
-    return this.xhr.fetchJson(url);
+    return this.xhr.fetchJson(url, {
+      requireAmpResponseSourceOrigin: false,
+    });
   }
 
   /**
@@ -124,9 +126,12 @@ export class PinItButton {
       color: ['red', 'white'].indexOf(this.color) !== -1 ? this.color : 'gray',
     };
 
+    // TODO(dvoytenko, #6794): Remove old `-amp-fill-content` form after the new
+    // form is in PROD for 1-2 weeks.
     const clazz = [
       `-amp-pinterest${CLASS.shape}${CLASS.height}`,
       '-amp-fill-content',
+      'i-amphtml-fill-content',
     ];
 
     let countBubble = '';

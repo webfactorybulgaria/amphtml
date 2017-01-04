@@ -22,11 +22,15 @@ import {
   getSourceOrigin,
   getSourceUrl,
   isProxyOrigin,
+  isLocalhostOrigin,
+  isSecureUrl,
   parseQueryString,
   parseUrl,
   removeFragment,
   resolveRelativeUrl,
   resolveRelativeUrlFallback_,
+  serializeQueryString,
+  getCorsUrl,
 } from '../../src/url';
 
 describe('parseUrl', () => {
@@ -216,7 +220,35 @@ describe('parseQueryString', () => {
   });
 });
 
-describe('assertHttpsUrl', () => {
+
+describe('serializeQueryString', () => {
+  it('should return empty string for empty params', () => {
+    expect(serializeQueryString({})).to.equal('');
+    expect(serializeQueryString({
+      nullValue: null,
+      undefValue: undefined,
+    })).to.equal('');
+  });
+  it('should serialize a single value', () => {
+    expect(serializeQueryString({a: 'A'})).to.equal('a=A');
+  });
+  it('should serialize multiple values', () => {
+    expect(serializeQueryString({a: 'A', b: 'B'})).to.equal('a=A&b=B');
+  });
+  it('should coerce to string', () => {
+    expect(serializeQueryString({a: 1, b: true})).to.equal('a=1&b=true');
+  });
+  it('should encode values and keys', () => {
+    expect(serializeQueryString({'a+b': 'A+B'})).to.equal('a%2Bb=A%2BB');
+  });
+  it('should serialize multiple valued parameters', () => {
+    expect(serializeQueryString({a: [1,2,3], b: true})).to.equal(
+        'a=1&a=2&a=3&b=true');
+  });
+});
+
+
+describe('assertHttpsUrl/isSecureUrl', () => {
   const referenceElement = document.createElement('div');
   it('should NOT allow null or undefined, but allow empty string', () => {
     expect(() => {
@@ -229,26 +261,34 @@ describe('assertHttpsUrl', () => {
   });
   it('should allow https', () => {
     assertHttpsUrl('https://twitter.com', referenceElement);
+    expect(isSecureUrl('https://twitter.com')).to.be.true;
   });
   it('should allow protocol relative', () => {
     assertHttpsUrl('//twitter.com', referenceElement);
+    // `isSecureUrl` always resolves relative URLs.
+    expect(isSecureUrl('//twitter.com'))
+        .to.be.equal(window.location.protocol == 'https:');
   });
   it('should allow localhost with http', () => {
     assertHttpsUrl('http://localhost:8000/sfasd', referenceElement);
+    expect(isSecureUrl('http://localhost:8000/sfasd')).to.be.true;
   });
   it('should allow localhost with http suffix', () => {
     assertHttpsUrl('http://iframe.localhost:8000/sfasd', referenceElement);
+    expect(isSecureUrl('http://iframe.localhost:8000/sfasd')).to.be.true;
   });
 
   it('should fail on http', () => {
     expect(() => {
       assertHttpsUrl('http://twitter.com', referenceElement);
     }).to.throw(/source must start with/);
+    expect(isSecureUrl('http://twitter.com')).to.be.false;
   });
   it('should fail on http with localhost in the name', () => {
     expect(() => {
       assertHttpsUrl('http://foolocalhost', referenceElement);
     }).to.throw(/source must start with/);
+    expect(isSecureUrl('http://foolocalhost')).to.be.false;
   });
 });
 
@@ -358,6 +398,13 @@ describe('addParamsToUrl', () => {
     url = addParamsToUrl(url, params);
 
     expect(url).to.equal('https://www.ampproject.org/get/here?hello=world&foo=bar#hash-value');
+
+    expect(addParamsToUrl('http://example.com', {
+      firstname: 'Cool',
+      lastname: 'Beans',
+      interests: ['Basketball', 'Food', 'Running'],
+    })).to.equal('http://example.com?firstname=Cool&lastname=Beans&' +
+        'interests=Basketball&interests=Food&interests=Running');
   });
 
   it('should keep host and path intact', () => {
@@ -370,19 +417,36 @@ describe('addParamsToUrl', () => {
 describe('isProxyOrigin', () => {
 
   function testProxyOrigin(href, bool) {
-    it('should return whether it is a proxy origin origin for ' + href, () => {
+    it('should return whether it is a proxy origin for ' + href, () => {
       expect(isProxyOrigin(parseUrl(href))).to.equal(bool);
     });
   }
 
+  // CDN
+  testProxyOrigin(
+      'https://cdn.ampproject.org/', true);
+  testProxyOrigin(
+      'http://cdn.ampproject.org/', false);
   testProxyOrigin(
       'https://cdn.ampproject.org/v/www.origin.com/foo/?f=0', true);
   testProxyOrigin(
+      'https://cdn.ampproject.org/c/www.origin.com/foo/?f=0', true);
+
+  // Prefixed CDN
+  testProxyOrigin(
+      'https://xyz.cdn.ampproject.org/', true);
+  testProxyOrigin(
+      'http://xyz.cdn.ampproject.org/', false);
+  testProxyOrigin(
+      'https://xyz-123.cdn.ampproject.org/', true);
+  testProxyOrigin(
+      'https://xyz.cdn.ampproject.org/v/www.origin.com/foo/?f=0', true);
+  testProxyOrigin(
+      'https://xyz.cdn.ampproject.org/c/www.origin.com/foo/?f=0', true);
+
+  // Others
+  testProxyOrigin(
       'http://localhost:123', false);
-  testProxyOrigin(
-      'http://localhost:123/c', true);
-  testProxyOrigin(
-      'http://localhost:123/v', true);
   testProxyOrigin(
       'https://cdn.ampproject.net/v/www.origin.com/foo/?f=0', false);
   testProxyOrigin(
@@ -390,6 +454,27 @@ describe('isProxyOrigin', () => {
   testProxyOrigin(
       'http://www.spiegel.de/politik/deutschland/angela-merkel-a-1062761.html',
       false);
+});
+
+describe('isLocalhostOrigin', () => {
+  function testLocalhostOrigin(href, bool) {
+    it('should return whether it is a localhost origin for ' + href, () => {
+      expect(isLocalhostOrigin(parseUrl(href))).to.equal(bool);
+    });
+  }
+
+  testLocalhostOrigin(
+      'http://localhost', true);
+  testLocalhostOrigin(
+      'https://localhost', true);
+  testLocalhostOrigin(
+      'http://localhost:123/foo.html', true);
+  testLocalhostOrigin(
+      'https://localhost:123/foo.html', true);
+  testLocalhostOrigin(
+      'http://localhost.example.com/foo.html', false);
+  testLocalhostOrigin(
+      'http://www.example.com/foo.html', false);
 });
 
 describe('getSourceOrigin/Url', () => {
@@ -419,6 +504,26 @@ describe('getSourceOrigin/Url', () => {
       'https://origin.com/foo/?f=0');
   testOrigin(
       'https://cdn.ampproject.org/c/s/origin.com%3A81/foo/?f=0',
+      'https://origin.com:81/foo/?f=0');
+
+  // Prefixed CDN
+  testOrigin(
+      'https://xyz.cdn.ampproject.org/v/www.origin.com/foo/?f=0#h',
+      'http://www.origin.com/foo/?f=0#h');
+  testOrigin(
+      'https://xyz.cdn.ampproject.org/v/s/www.origin.com/foo/?f=0#h',
+      'https://www.origin.com/foo/?f=0#h');
+  testOrigin(
+      'https://xyz.cdn.ampproject.org/c/www.origin.com/foo/?f=0',
+      'http://www.origin.com/foo/?f=0');
+  testOrigin(
+      'https://xyz.cdn.ampproject.org/c/s/www.origin.com/foo/?f=0',
+      'https://www.origin.com/foo/?f=0');
+  testOrigin(
+      'https://xyz.cdn.ampproject.org/c/s/origin.com/foo/?f=0',
+      'https://origin.com/foo/?f=0');
+  testOrigin(
+      'https://xyz.cdn.ampproject.org/c/s/origin.com%3A81/foo/?f=0',
       'https://origin.com:81/foo/?f=0');
 
   // Removes amp-related paramters.
@@ -530,4 +635,20 @@ describe('resolveRelativeUrl', () => {
       'file?f=0#h',
       parseUrl('http://base.org/bfile?bf=0#bh'),
       'http://base.org/file?f=0#h');
+});
+
+
+describe('getCorsUrl', () => {
+  it('should error if __amp_source_origin is set', () => {
+    expect(() => getCorsUrl(window, 'http://example.com/?__amp_source_origin'))
+        .to.throw(/Source origin is not allowed in/);
+    expect(() => getCorsUrl(window, 'http://example.com/?name=hello'))
+        .to.not.throw;
+  });
+
+  it('should set __amp_source_origin as a url param', () => {
+    expect(getCorsUrl(window, 'http://example.com/?name=hello'))
+        .to.equal('http://example.com/?name=hello&' +
+            '__amp_source_origin=http%3A%2F%2Flocalhost%3A9876');
+  });
 });

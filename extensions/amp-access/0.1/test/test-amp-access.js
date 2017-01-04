@@ -17,15 +17,22 @@
 import {AccessClientAdapter} from '../amp-access-client';
 import {AccessOtherAdapter} from '../amp-access-other';
 import {AccessServerAdapter} from '../amp-access-server';
+import {AccessServerJwtAdapter} from '../amp-access-server-jwt';
+import {AccessVendorAdapter} from '../amp-access-vendor';
 import {AccessService} from '../amp-access';
 import {Observable} from '../../../../src/observable';
+import {installActionServiceForDoc,} from
+    '../../../../src/service/action-impl';
 import {installCidService,} from
     '../../../../extensions/amp-analytics/0.1/cid-impl';
+import {installDocService,} from
+    '../../../../src/service/ampdoc-impl';
 import {installPerformanceService,} from
     '../../../../src/service/performance-impl';
 import {markElementScheduledForTesting} from '../../../../src/custom-element';
 import {toggleExperiment} from '../../../../src/experiments';
 import * as sinon from 'sinon';
+
 
 describe('AccessService', () => {
 
@@ -36,6 +43,8 @@ describe('AccessService', () => {
     sandbox = sinon.sandbox.create();
 
     markElementScheduledForTesting(window, 'amp-analytics');
+    const docService = installDocService(window, /* isSingleDoc */ true);
+    installActionServiceForDoc(docService.getAmpDoc());
     installCidService(window);
     installPerformanceService(window);
 
@@ -122,7 +131,7 @@ describe('AccessService', () => {
   });
 
   it('should parse type', () => {
-    const config = {
+    let config = {
       'authorization': 'https://acme.com/a',
       'pingback': 'https://acme.com/p',
       'login': 'https://acme.com/l',
@@ -151,11 +160,90 @@ describe('AccessService', () => {
     expect(new AccessService(window).adapter_).to.be
         .instanceOf(AccessServerAdapter);
 
+    // When the 'amp-access-server' experiment is enabled, documents with
+    // access type 'client' are also treated as 'server'.
+    config['type'] = 'client';
+    toggleExperiment(window, 'amp-access-server', true);
+    element.textContent = JSON.stringify(config);
+    expect(new AccessService(window).type_).to.equal('server');
+    expect(new AccessService(window).adapter_).to.be
+        .instanceOf(AccessServerAdapter);
+
     config['type'] = 'other';
     element.textContent = JSON.stringify(config);
     expect(new AccessService(window).type_).to.equal('other');
     expect(new AccessService(window).adapter_).to.be
         .instanceOf(AccessOtherAdapter);
+
+    config = {};
+    config['type'] = 'vendor';
+    config['vendor'] = 'vendor1';
+    element.textContent = JSON.stringify(config);
+    expect(new AccessService(window).type_).to.equal('vendor');
+    expect(new AccessService(window).adapter_).to.be
+        .instanceOf(AccessVendorAdapter);
+
+    delete config['type'];
+    config['vendor'] = 'vendor1';
+    element.textContent = JSON.stringify(config);
+    expect(new AccessService(window).type_).to.equal('vendor');
+    expect(new AccessService(window).adapter_).to.be
+        .instanceOf(AccessVendorAdapter);
+  });
+
+  it('should parse type for JWT w/o experiment', () => {
+    const config = {
+      'authorization': 'https://acme.com/a',
+      'pingback': 'https://acme.com/p',
+      'login': 'https://acme.com/l',
+      'jwt': true,
+    };
+    toggleExperiment(window, 'amp-access-jwt', false);
+    element.textContent = JSON.stringify(config);
+    expect(new AccessService(window).type_).to.equal('client');
+    expect(new AccessService(window).adapter_).to.be
+        .instanceOf(AccessClientAdapter);
+
+    config['type'] = 'client';
+    element.textContent = JSON.stringify(config);
+    expect(new AccessService(window).type_).to.equal('client');
+    expect(new AccessService(window).adapter_).to.be
+        .instanceOf(AccessClientAdapter);
+
+    config['type'] = 'server';
+    toggleExperiment(window, 'amp-access-server', true);
+    element.textContent = JSON.stringify(config);
+    expect(new AccessService(window).type_).to.equal('server');
+    expect(new AccessService(window).adapter_).to.be
+        .instanceOf(AccessServerAdapter);
+  });
+
+  it('should parse type for JWT with experiment', () => {
+    const config = {
+      'authorization': 'https://acme.com/a',
+      'pingback': 'https://acme.com/p',
+      'login': 'https://acme.com/l',
+      'jwt': true,
+      'publicKeyUrl': 'https://acme.com/pk',
+    };
+    toggleExperiment(window, 'amp-access-jwt', true);
+    element.textContent = JSON.stringify(config);
+    expect(new AccessService(window).type_).to.equal('client');
+    expect(new AccessService(window).adapter_).to.be
+        .instanceOf(AccessServerJwtAdapter);
+
+    config['type'] = 'client';
+    element.textContent = JSON.stringify(config);
+    expect(new AccessService(window).type_).to.equal('client');
+    expect(new AccessService(window).adapter_).to.be
+        .instanceOf(AccessServerJwtAdapter);
+
+    config['type'] = 'server';
+    toggleExperiment(window, 'amp-access-server', true);
+    element.textContent = JSON.stringify(config);
+    expect(new AccessService(window).type_).to.equal('server');
+    expect(new AccessService(window).adapter_).to.be
+        .instanceOf(AccessServerJwtAdapter);
   });
 
   it('should fail if type is unknown', () => {
@@ -194,9 +282,11 @@ describe('AccessService', () => {
     service.runAuthorization_ = sandbox.spy();
     service.scheduleView_ = sandbox.spy();
     service.listenToBroadcasts_ = sandbox.spy();
+    service.signIn_.start = sandbox.spy();
 
     service.startInternal_();
     expect(service.buildLoginUrls_.callCount).to.equal(1);
+    expect(service.signIn_.start.callCount).to.equal(1);
     expect(service.runAuthorization_.callCount).to.equal(1);
     expect(service.scheduleView_.callCount).to.equal(1);
     expect(service.scheduleView_.firstCall.args[0]).to.equal(2000);
@@ -225,6 +315,35 @@ describe('AccessService', () => {
     expect(service.authorizationFallbackResponse_).to.deep.equal(
         {'error': true});
   });
+
+  it('should register vendor', () => {
+    const config = {
+      'vendor': 'vendor1',
+    };
+    element.textContent = JSON.stringify(config);
+    const accessService = new AccessService(window);
+    class Vendor1 {};
+    const vendor1 = new Vendor1();
+    accessService.registerVendor('vendor1', vendor1);
+    return accessService.adapter_.vendorPromise_.then(vendor => {
+      expect(vendor).to.equal(vendor1);
+    });
+  });
+
+  it('should prohibit vendor registration for non-vendor config', () => {
+    const config = {
+      'authorization': 'https://acme.com/a',
+      'pingback': 'https://acme.com/p',
+      'login': 'https://acme.com/l',
+    };
+    element.textContent = JSON.stringify(config);
+    const accessService = new AccessService(window);
+    class Vendor1 {};
+    const vendor1 = new Vendor1();
+    expect(() => {
+      accessService.registerVendor('vendor1', vendor1);
+    }).to.throw(/can only be used for "type=vendor"/);
+  });
 });
 
 
@@ -242,6 +361,8 @@ describe('AccessService adapter context', () => {
     clock.tick(0);
 
     markElementScheduledForTesting(window, 'amp-analytics');
+    const docService = installDocService(window, /* isSingleDoc */ true);
+    installActionServiceForDoc(docService.getAmpDoc());
     installCidService(window);
     installPerformanceService(window);
 
@@ -303,6 +424,35 @@ describe('AccessService adapter context', () => {
           expect(url).to.equal('?rid=reader1&type=');
         });
   });
+
+  it('should resolve URL with ACCESS_TOKEN, but not enabled', () => {
+    return context.buildUrl('?at=ACCESS_TOKEN').then(url => {
+      expect(url).to.equal('?at=');
+    });
+  });
+
+  it('should resolve URL with ACCESS_TOKEN, enabled, but null', () => {
+    sandbox.stub(service.signIn_, 'getAccessTokenPassive', () => null);
+    return context.buildUrl('?at=ACCESS_TOKEN').then(url => {
+      expect(url).to.equal('?at=');
+    });
+  });
+
+  it('should resolve URL with ACCESS_TOKEN, enabled, but null promise', () => {
+    sandbox.stub(service.signIn_, 'getAccessTokenPassive',
+        () => Promise.resolve(null));
+    return context.buildUrl('?at=ACCESS_TOKEN').then(url => {
+      expect(url).to.equal('?at=');
+    });
+  });
+
+  it('should resolve URL with ACCESS_TOKEN, enabled, not null', () => {
+    sandbox.stub(service.signIn_, 'getAccessTokenPassive',
+        () => Promise.resolve('access_token'));
+    return context.buildUrl('?at=ACCESS_TOKEN').then(url => {
+      expect(url).to.equal('?at=access_token');
+    });
+  });
 });
 
 
@@ -312,7 +462,6 @@ describe('AccessService authorization', () => {
   let clock;
   let configElement, elementOn, elementOff, elementError;
   let cidMock;
-  let analyticsMock;
   let adapterMock;
   let performanceMock;
   let service;
@@ -323,6 +472,8 @@ describe('AccessService authorization', () => {
     clock.tick(0);
 
     markElementScheduledForTesting(window, 'amp-analytics');
+    const docService = installDocService(window, /* isSingleDoc */ true);
+    installActionServiceForDoc(docService.getAmpDoc());
     installCidService(window);
     installPerformanceService(window);
 
@@ -355,6 +506,7 @@ describe('AccessService authorization', () => {
     const adapter = {
       getConfig: () => {},
       isAuthorizationEnabled: () => true,
+      isPingbackEnabled: () => true,
       authorize: () => {},
     };
     service.adapter_ = adapter;
@@ -380,12 +532,7 @@ describe('AccessService authorization', () => {
     cidMock = sandbox.mock(cid);
     service.cid_ = Promise.resolve(cid);
 
-    const analytics = {
-      triggerEvent: () => {},
-    };
-    analyticsMock = sandbox.mock(analytics);
-    service.analyticsPromise_ = {then: callback => callback(analytics)};
-
+    service.analyticsEvent_ = sandbox.spy();
     performanceMock = sandbox.mock(service.performance_);
   });
 
@@ -403,7 +550,6 @@ describe('AccessService authorization', () => {
       elementError.parentElement.removeChild(elementError);
     }
     adapterMock.verify();
-    analyticsMock.verify();
     performanceMock.verify();
     sandbox.restore();
   });
@@ -553,9 +699,6 @@ describe('AccessService authorization', () => {
         .withExactArgs()
         .returns(Promise.resolve({access: true}))
         .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-authorization-received')
-        .once();
     performanceMock.expects('tick')
         .withExactArgs('aaa')
         .once();
@@ -564,7 +707,11 @@ describe('AccessService authorization', () => {
         .once();
     expect(service.firstAuthorizationPromise_).to.exist;
     return service.runAuthorization_().then(() => {
-      return service.whenFirstAuthorized();
+      return service.whenFirstAuthorized().then(() => {
+        expect(service.analyticsEvent_).to.have.been.calledOnce;
+        expect(service.analyticsEvent_).to.have.been.calledWith(
+            'access-authorization-received');
+      });
     });
   });
 
@@ -574,12 +721,6 @@ describe('AccessService authorization', () => {
         .withExactArgs()
         .returns(Promise.reject('intentional'))
         .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-authorization-received')
-        .never();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-authorization-failed')
-        .once();
     return service.runAuthorization_().then(() => {
       expect(service.firstAuthorizationPromise_).to.exist;
       let resolved = false;
@@ -588,6 +729,11 @@ describe('AccessService authorization', () => {
       });
       return Promise.resolve().then(() => {
         expect(resolved).to.be.false;
+        expect(service.analyticsEvent_).to.have.been.calledOnce;
+        expect(service.analyticsEvent_).to.not.have.been.calledWith(
+            'access-authorization-received');
+        expect(service.analyticsEvent_).to.have.been.calledWith(
+            'access-authorization-failed');
       });
     });
   });
@@ -629,6 +775,8 @@ describe('AccessService applyAuthorizationToElement_', () => {
     sandbox = sinon.sandbox.create();
 
     markElementScheduledForTesting(window, 'amp-analytics');
+    const docService = installDocService(window, /* isSingleDoc */ true);
+    installActionServiceForDoc(docService.getAmpDoc());
     installCidService(window);
     installPerformanceService(window);
 
@@ -766,8 +914,6 @@ describe('AccessService pingback', () => {
   let configElement;
   let adapterMock;
   let cidMock;
-  let analytics;
-  let analyticsMock;
   let visibilityChanged;
   let scrolled;
   let service;
@@ -777,6 +923,8 @@ describe('AccessService pingback', () => {
     clock = sandbox.useFakeTimers();
 
     markElementScheduledForTesting(window, 'amp-analytics');
+    const docService = installDocService(window, /* isSingleDoc */ true);
+    installActionServiceForDoc(docService.getAmpDoc());
     installCidService(window);
     installPerformanceService(window);
 
@@ -794,7 +942,8 @@ describe('AccessService pingback', () => {
     service = new AccessService(window);
 
     const adapter = {
-      pingback: () => {},
+      isPingbackEnabled: () => true,
+      pingback: () => Promise.resolve(),
     };
     service.adapter_ = adapter;
     adapterMock = sandbox.mock(adapter);
@@ -805,12 +954,7 @@ describe('AccessService pingback', () => {
     cidMock = sandbox.mock(cid);
     service.cid_ = Promise.resolve(cid);
 
-    analytics = {
-      triggerEvent: () => {},
-    };
-    analyticsMock = sandbox.mock(analytics);
-    service.analyticsPromise_ = {then: callback => callback(analytics)};
-
+    service.analyticsEvent_ = sandbox.spy();
     this.docState_ = {
       onReady: callback => callback(),
     };
@@ -837,7 +981,6 @@ describe('AccessService pingback', () => {
       configElement.parentElement.removeChild(configElement);
     }
     adapterMock.verify();
-    analyticsMock.verify();
     sandbox.restore();
   });
 
@@ -852,9 +995,6 @@ describe('AccessService pingback', () => {
 
   it('should register "viewed" signal after timeout', () => {
     service.reportViewToServer_ = sandbox.spy();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-viewed')
-        .once();
     const p = service.reportWhenViewed_(/* timeToView */ 2000);
     return Promise.resolve().then(() => {
       clock.tick(2001);
@@ -863,14 +1003,12 @@ describe('AccessService pingback', () => {
       expect(service.reportViewToServer_.callCount).to.equal(1);
       expect(visibilityChanged.getHandlerCount()).to.equal(0);
       expect(scrolled.getHandlerCount()).to.equal(0);
+      expect(service.analyticsEvent_).to.have.been.calledWith('access-viewed');
     });
   });
 
   it('should register "viewed" signal after scroll', () => {
     service.reportViewToServer_ = sandbox.spy();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-viewed')
-        .once();
     const p = service.reportWhenViewed_(/* timeToView */ 2000);
     return Promise.resolve().then(() => {
       scrolled.fire();
@@ -879,14 +1017,12 @@ describe('AccessService pingback', () => {
       expect(service.reportViewToServer_.callCount).to.equal(1);
       expect(visibilityChanged.getHandlerCount()).to.equal(0);
       expect(scrolled.getHandlerCount()).to.equal(0);
+      expect(service.analyticsEvent_).to.have.been.calledWith('access-viewed');
     });
   });
 
   it('should register "viewed" signal after click', () => {
     service.reportViewToServer_ = sandbox.spy();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-viewed')
-        .once();
     const p = service.reportWhenViewed_(/* timeToView */ 2000);
     return Promise.resolve().then(() => {
       let clickEvent;
@@ -903,6 +1039,7 @@ describe('AccessService pingback', () => {
       expect(service.reportViewToServer_.callCount).to.equal(1);
       expect(visibilityChanged.getHandlerCount()).to.equal(0);
       expect(scrolled.getHandlerCount()).to.equal(0);
+      expect(service.analyticsEvent_).to.have.been.calledWith('access-viewed');
     });
   });
 
@@ -912,7 +1049,6 @@ describe('AccessService pingback', () => {
     service.firstAuthorizationPromise_ = new Promise(resolve => {
       firstAuthorizationResolver = resolve;
     });
-    const triggerEventStub = sandbox.stub(analytics, 'triggerEvent');
     const triggerStart = 1;  // First event is "access-authorization-received".
     service.reportViewToServer_ = sandbox.spy();
     service.reportWhenViewed_(/* timeToView */ 2000);
@@ -921,13 +1057,14 @@ describe('AccessService pingback', () => {
       return Promise.resolve();
     }).then(() => {
       expect(service.reportViewToServer_.callCount).to.equal(0);
-      expect(triggerEventStub.callCount).to.equal(triggerStart);
+      expect(service.analyticsEvent_.callCount).to.equal(triggerStart);
       firstAuthorizationResolver();
-      return service.firstAuthorizationPromise_;
+      return Promise.all([service.firstAuthorizationPromise_,
+          service.reportViewPromise_]);
     }).then(() => {
       expect(service.reportViewToServer_.callCount).to.equal(1);
-      expect(triggerEventStub.callCount).to.equal(triggerStart + 1);
-      expect(triggerEventStub.getCall(triggerStart).args[0])
+      expect(service.analyticsEvent_.callCount).to.equal(triggerStart + 1);
+      expect(service.analyticsEvent_.getCall(triggerStart).args[0])
           .to.equal('access-viewed');
     });
   });
@@ -938,7 +1075,6 @@ describe('AccessService pingback', () => {
     service.lastAuthorizationPromise_ = new Promise(resolve => {
       lastAuthorizationResolver = resolve;
     });
-    const triggerEventStub = sandbox.stub(analytics, 'triggerEvent');
     const triggerStart = 1;  // First event is "access-authorization-received".
     service.reportViewToServer_ = sandbox.spy();
     service.reportWhenViewed_(/* timeToView */ 2000);
@@ -947,13 +1083,14 @@ describe('AccessService pingback', () => {
       return Promise.resolve();
     }).then(() => {
       expect(service.reportViewToServer_.callCount).to.equal(0);
-      expect(triggerEventStub.callCount).to.equal(triggerStart);
+      expect(service.analyticsEvent_.callCount).to.equal(triggerStart);
       lastAuthorizationResolver();
-      return service.lastAuthorizationPromise_;
+      return Promise.all([service.lastAuthorizationPromise_,
+          service.reportViewPromise_]);
     }).then(() => {
       expect(service.reportViewToServer_.callCount).to.equal(1);
-      expect(triggerEventStub.callCount).to.equal(triggerStart + 1);
-      expect(triggerEventStub.getCall(triggerStart).args[0])
+      expect(service.analyticsEvent_.callCount).to.equal(triggerStart + 1);
+      expect(service.analyticsEvent_.getCall(triggerStart).args[0])
           .to.equal('access-viewed');
     });
   });
@@ -989,6 +1126,19 @@ describe('AccessService pingback', () => {
     }).then(() => {
       expect(service.reportViewToServer_.callCount).to.equal(1);
     });
+  });
+
+  it('should ignore "viewed" monitoring when pingback is disabled', () => {
+    adapterMock.expects('isPingbackEnabled').returns(false);
+
+    service.reportWhenViewed_ = sandbox.spy();
+    const broadcastStub = sandbox.stub(service.viewer_, 'broadcast');
+
+    service.scheduleView_(/* timeToView */ 2000);
+
+    expect(service.reportWhenViewed_.callCount).to.equal(0);
+    expect(service.reportViewPromise_).to.be.null;
+    expect(broadcastStub.callCount).to.equal(0);
   });
 
   it('should re-schedule "viewed" monitoring after visibility change', () => {
@@ -1046,15 +1196,14 @@ describe('AccessService pingback', () => {
         .withExactArgs()
         .returns(Promise.resolve())
         .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-pingback-sent')
-        .once();
     return service.reportViewToServer_().then(() => {
       return 'SUCCESS';
     }, error => {
       return 'ERROR ' + error;
     }).then(result => {
       expect(result).to.equal('SUCCESS');
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-pingback-sent');
     });
   });
 
@@ -1064,18 +1213,16 @@ describe('AccessService pingback', () => {
         .withExactArgs()
         .returns(Promise.reject('intentional'))
         .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-pingback-sent')
-        .never();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-pingback-failed')
-        .once();
     return service.reportViewToServer_().then(() => {
       return 'SUCCESS';
     }, error => {
       return 'ERROR ' + error;
     }).then(result => {
       expect(result).to.match(/ERROR/);
+      expect(service.analyticsEvent_).to.have.not.been.calledWith(
+          'access-pingback-sent');
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-pingback-failed');
     });
   });
 
@@ -1104,7 +1251,6 @@ describe('AccessService login', () => {
   let clock;
   let configElement;
   let cidMock;
-  let analyticsMock;
   let serviceMock;
   let service;
 
@@ -1113,6 +1259,8 @@ describe('AccessService login', () => {
     clock = sandbox.useFakeTimers();
 
     markElementScheduledForTesting(window, 'amp-analytics');
+    const docService = installDocService(window, /* isSingleDoc */ true);
+    installActionServiceForDoc(docService.getAmpDoc());
     installCidService(window);
     installPerformanceService(window);
 
@@ -1135,16 +1283,17 @@ describe('AccessService login', () => {
     cidMock = sandbox.mock(cid);
     service.cid_ = Promise.resolve(cid);
 
-    const analytics = {
-      triggerEvent: () => {},
-    };
-    analyticsMock = sandbox.mock(analytics);
-    service.analyticsPromise_ = {then: callback => callback(analytics)};
-
+    service.analyticsEvent_ = sandbox.spy();
     service.openLoginDialog_ = () => {};
     serviceMock = sandbox.mock(service);
 
     service.loginUrlMap_[''] = 'https://acme.com/l?rid=R';
+
+    service.viewer_ = {
+      broadcast: () => {},
+      isVisible: () => true,
+      onVisibilityChanged: () => {},
+    };
   });
 
   afterEach(() => {
@@ -1241,13 +1390,12 @@ describe('AccessService login', () => {
   it('should open dialog in the same microtask', () => {
     service.openLoginDialog_ = sandbox.stub();
     service.openLoginDialog_.returns(new Promise(() => {}));
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-started')
-        .once();
     service.login('');
     expect(service.openLoginDialog_.callCount).to.equal(1);
     expect(service.openLoginDialog_.firstCall.args[0])
         .to.equal('https://acme.com/l?rid=R');
+    expect(service.analyticsEvent_).to.have.been.calledWith(
+        'access-login-started');
   });
 
   it('should fail to open dialog if loginUrl is not built yet', () => {
@@ -1264,12 +1412,6 @@ describe('AccessService login', () => {
         .withExactArgs('https://acme.com/l?rid=R')
         .returns(Promise.resolve('#success=true'))
         .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-started')
-        .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-success')
-        .once();
     return service.login('').then(() => {
       expect(service.loginPromise_).to.not.exist;
       expect(authorizationStub.callCount).to.equal(1);
@@ -1282,6 +1424,11 @@ describe('AccessService login', () => {
         'type': 'amp-access-reauthorize',
         'origin': service.pubOrigin_,
       });
+
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-started');
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-success');
     });
   });
 
@@ -1291,15 +1438,13 @@ describe('AccessService login', () => {
         .withExactArgs('https://acme.com/l?rid=R')
         .returns(Promise.resolve('#success=no'))
         .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-started')
-        .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-rejected')
-        .once();
     return service.login('').then(() => {
       expect(service.loginPromise_).to.not.exist;
       expect(service.runAuthorization_.callCount).to.equal(0);
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-rejected');
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-started');
     });
   });
 
@@ -1312,12 +1457,6 @@ describe('AccessService login', () => {
         .withExactArgs('https://acme.com/l?rid=R')
         .returns(Promise.resolve(''))
         .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-started')
-        .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-rejected')
-        .once();
     return service.login('').then(() => {
       expect(service.loginPromise_).to.not.exist;
       expect(authorizationStub.callCount).to.equal(1);
@@ -1330,6 +1469,10 @@ describe('AccessService login', () => {
         'type': 'amp-access-reauthorize',
         'origin': service.pubOrigin_,
       });
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-started');
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-rejected');
     });
   });
 
@@ -1339,16 +1482,14 @@ describe('AccessService login', () => {
         .withExactArgs('https://acme.com/l?rid=R')
         .returns(Promise.reject('abort'))
         .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-started')
-        .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-failed')
-        .once();
     return service.login('').then(() => 'S', () => 'ERROR').then(result => {
       expect(result).to.equal('ERROR');
       expect(service.loginPromise_).to.not.exist;
       expect(service.runAuthorization_.callCount).to.equal(0);
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-started');
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-failed');
     });
   });
 
@@ -1368,18 +1509,6 @@ describe('AccessService login', () => {
         .withExactArgs('https://acme.com/l2?rid=R')
         .returns(Promise.resolve('#success=true'))
         .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-started')
-        .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-login2-started')
-        .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-success')
-        .once();
-    analyticsMock.expects('triggerEvent')
-        .withExactArgs('access-login-login2-success')
-        .once();
     return service.login('login2').then(() => {
       expect(service.loginPromise_).to.not.exist;
       expect(authorizationStub.callCount).to.equal(1);
@@ -1388,6 +1517,14 @@ describe('AccessService login', () => {
         'type': 'amp-access-reauthorize',
         'origin': service.pubOrigin_,
       });
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-started');
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-login2-started');
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-success');
+      expect(service.analyticsEvent_).to.have.been.calledWith(
+          'access-login-login2-success');
     });
   });
 
@@ -1421,6 +1558,41 @@ describe('AccessService login', () => {
       expect(service.loginPromise_).to.equal(p3);
     });
   });
+
+  it('should request sign-in when configured', () => {
+    service.signIn_.requestSignIn = sandbox.stub();
+    service.signIn_.requestSignIn.returns(Promise.resolve('#signin'));
+    service.openLoginDialog_ = sandbox.stub();
+    service.openLoginDialog_.returns(Promise.resolve('#login'));
+    service.login('');
+    expect(service.signIn_.requestSignIn.callCount).to.equal(1);
+    expect(service.signIn_.requestSignIn.firstCall.args[0])
+        .to.equal('https://acme.com/l?rid=R');
+    expect(service.openLoginDialog_.callCount).to.equal(0);
+  });
+
+  it('should wait for token exchange post-login with success=true', () => {
+    service.signIn_.postLoginResult = sandbox.stub();
+    service.signIn_.postLoginResult.returns(Promise.resolve());
+    const authorizationStub = sandbox.stub(service, 'runAuthorization_',
+        () => Promise.resolve());
+    const viewStub = sandbox.stub(service, 'scheduleView_');
+    const broadcastStub = sandbox.stub(service.viewer_, 'broadcast');
+    serviceMock.expects('openLoginDialog_')
+        .withExactArgs('https://acme.com/l?rid=R')
+        .returns(Promise.resolve('#success=true'))
+        .once();
+    return service.login('').then(() => {
+      expect(service.loginPromise_).to.not.exist;
+      expect(service.signIn_.postLoginResult.callCount).to.equal(1);
+      expect(service.signIn_.postLoginResult.firstCall.args[0]).to.deep.equal({
+        'success': 'true',
+      });
+      expect(authorizationStub.callCount).to.equal(1);
+      expect(viewStub.callCount).to.equal(1);
+      expect(broadcastStub.callCount).to.equal(1);
+    });
+  });
 });
 
 
@@ -1434,6 +1606,8 @@ describe('AccessService analytics', () => {
     sandbox = sinon.sandbox.create();
 
     markElementScheduledForTesting(window, 'amp-analytics');
+    const docService = installDocService(window, /* isSingleDoc */ true);
+    installActionServiceForDoc(docService.getAmpDoc());
     installCidService(window);
     installPerformanceService(window);
 

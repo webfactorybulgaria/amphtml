@@ -23,7 +23,7 @@ limitations under the License.
   </tr>
   <tr>
     <td class="col-fourty" width="40%"><strong>Availability</strong></td>
-    <td>Experimental</td>
+    <td>Stable</td>
   </tr>
   <tr>
     <td class="col-fourty"><strong>Required Script</strong></td>
@@ -31,7 +31,7 @@ limitations under the License.
   </tr>
   <tr>
     <td class="col-fourty"><strong>Examples</strong></td>
-    <td><a href="https://ampbyexample.com/components/amp-fx-flying-carpet">amp-fx-flying-carpet.html</a></td>
+    <td><a href="https://ampbyexample.com/components/amp-fx-flying-carpet/">Annotated code example for amp-fx-flying-carpet</a></td>
   </tr>
 </table>
 
@@ -43,7 +43,7 @@ Example:
 
 ```html
 <amp-fx-flying-carpet height="300px">
-  <amp-img src="fullscreen.png" width="100vw" height="100vh"></amp-img>
+  <amp-img src="fullscreen.png" width="300" height="500" layout="responsive"></amp-img>
 </amp-fx-flying-carpet>
 ```
 
@@ -58,14 +58,6 @@ The height of the flying carpets "window".
 - You may use the `amp-fx-flying-carpet` element selector to style it freely.
 - `amp-fx-flying-carpet` elements are always `position: relative`.
 
-## Validation errors
+## Validation
 
-The following lists validation errors specific to the `amp-fx-flying-carpet` tag
-(see also `amp-fx-flying-carpet` in the [AMP validator specification](https://github.com/ampproject/amphtml/blob/master/extensions/amp-fx-flying-carpet/0.1/validator-amp-fx-flying-carpet.protoascii)):
-
-<table>
-  <tr>
-    <th width="40%"><strong>Validation Error</strong></th>
-    <th>Description</th>
-  </tr>
-</table>
+See [amp-fx-flying-carpet rules](https://github.com/ampproject/amphtml/blob/master/extensions/amp-fx-flying-carpet/0.1/validator-amp-fx-flying-carpet.protoascii) in the AMP validator specification.

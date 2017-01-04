@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-import {getService} from './service';
+import {getExistingServiceForDocInEmbedScope} from './service';
 
 
 /**
- * @param {!Window} win
- * @return {!Action}
+ * @param {!Node|!./service/ampdoc-impl.AmpDoc} nodeOrDoc
+ * @return {!./service/action-impl.ActionService}
  */
-export function actionServiceFor(win) {
-  return getService(win, 'action');
-};
+export function actionServiceForDoc(nodeOrDoc) {
+  return /** @type {!./service/action-impl.ActionService} */ (
+      getExistingServiceForDocInEmbedScope(nodeOrDoc, 'action'));
+}

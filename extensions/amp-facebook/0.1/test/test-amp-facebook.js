@@ -21,6 +21,8 @@ import {
 import '../amp-facebook';
 import {adopt} from '../../../../src/runtime';
 import {facebook} from '../../../../3p/facebook';
+import {setDefaultBootstrapBaseUrlForTesting} from '../../../../src/3p-frame';
+import {resetServiceForTesting} from '../../../../src/service';
 
 adopt(window);
 
@@ -31,7 +33,7 @@ describe('amp-facebook', function() {
   const fbVideoHref = 'https://www.facebook.com/zuck/videos/10102509264909801/';
 
   function getAmpFacebook(href, opt_embedAs, opt_noFakeResources) {
-    return createIframePromise().then(iframe => {
+    return createIframePromise(/*opt_runtimeOff*/ true).then(iframe => {
       if (!opt_noFakeResources) {
         doNotLoadExternalResourcesInTest(iframe.win);
       }
@@ -56,8 +58,7 @@ describe('amp-facebook', function() {
       const iframe = ampFB.firstChild;
       expect(iframe).to.not.be.null;
       expect(iframe.tagName).to.equal('IFRAME');
-      expect(iframe.getAttribute('width')).to.equal('111');
-      expect(iframe.getAttribute('height')).to.equal('222');
+      expect(iframe.className).to.match(/i-amphtml-fill-content/);
     });
   });
 
@@ -66,8 +67,7 @@ describe('amp-facebook', function() {
       const iframe = ampFB.firstChild;
       expect(iframe).to.not.be.null;
       expect(iframe.tagName).to.equal('IFRAME');
-      expect(iframe.getAttribute('width')).to.equal('111');
-      expect(iframe.getAttribute('height')).to.equal('222');
+      expect(iframe.className).to.match(/i-amphtml-fill-content/);
     });
   });
 
@@ -105,10 +105,12 @@ describe('amp-facebook', function() {
       expect(fbVideo.getAttribute('data-href')).to.equal(fbVideoHref);
     });
   });
-  it('resizes facebook posts', () => {
 
+  it('resizes facebook posts', () => {
     const iframeSrc = 'http://ads.localhost:' + location.port +
-        '/base/test/fixtures/served/iframe.html';
+        '/test/fixtures/served/iframe.html';
+    resetServiceForTesting(window, 'bootstrapBaseUrl');
+    setDefaultBootstrapBaseUrlForTesting(iframeSrc);
     return getAmpFacebook(fbPostHref, undefined,
         /* opt_noFakeResources */ true).then(ampFB => {
           return new Promise((resolve, unusedReject) => {
@@ -116,21 +118,28 @@ describe('amp-facebook', function() {
             const impl = ampFB.implementation_;
             impl.changeHeight = newHeight => {
               expect(newHeight).to.equal(666);
-              resolve(iframe);
+              resolve(ampFB);
             };
-            iframe.onload = function() {
-              iframe.contentWindow.postMessage({
-                sentinel: 'amp-test',
-                type: 'requestHeight',
-                is3p: true,
-                height: 666,
-                amp3pSentinel: iframe.getAttribute('data-amp-3p-sentinel'),
-              }, '*');
-            };
-            iframe.src = iframeSrc;
+            iframe.contentWindow.postMessage({
+              sentinel: 'amp-test',
+              type: 'requestHeight',
+              is3p: true,
+              height: 666,
+              amp3pSentinel: iframe.getAttribute('data-amp-3p-sentinel'),
+            }, '*');
           });
-        }).then(iframe => {
-          expect(iframe.height).to.equal('666');
         });
+  });
+
+  it('removes iframe after unlayoutCallback', () => {
+    return getAmpFacebook(fbPostHref).then(ampFB => {
+      const iframe = ampFB.querySelector('iframe');
+      expect(iframe).to.not.be.null;
+      const obj = ampFB.implementation_;
+      obj.unlayoutCallback();
+      expect(ampFB.querySelector('iframe')).to.be.null;
+      expect(obj.iframe_).to.be.null;
+      expect(obj.unlayoutOnPause()).to.be.true;
+    });
   });
 });

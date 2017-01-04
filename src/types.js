@@ -62,10 +62,38 @@ export function isObject(value) {
 }
 
 /**
+ * Determines if value is of number type and finite.
+ * NaN and Infinity are not considered a finite number.
+ * String numbers are not considered numbers.
+ * @param {*} value
+ * @return {boolean}
+ */
+export function isFiniteNumber(value) {
+  return (typeof value === 'number' && isFinite(value));
+}
+
+/**
  * Determines if value is of FormData type.
  * @param {*} value
  * @return {boolean}
  */
 export function isFormData(value) {
   return toString(value) === '[object FormData]';
+}
+
+/**
+ * Checks whether `s` is a valid value of `enumObj`.
+ *
+ * @param {!Object<T>} enumObj
+ * @param {T} s
+ * @return {boolean}
+ * @template T
+ */
+export function isEnumValue(enumObj, s) {
+  for (const k in enumObj) {
+    if (enumObj[k] === s) {
+      return true;
+    }
+  }
+  return false;
 }

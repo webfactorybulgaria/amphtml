@@ -16,14 +16,18 @@
 package org.ampproject;
 
 
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.CommandLineRunner;
 import com.google.javascript.jscomp.CompilerOptions;
 import com.google.javascript.jscomp.CustomPassExecutionTime;
 import com.google.javascript.jscomp.PropertyRenamingPolicy;
 import com.google.javascript.jscomp.VariableRenamingPolicy;
+import com.google.javascript.rhino.IR;
+import com.google.javascript.rhino.Node;
 
 import java.io.IOException;
+import java.util.Set;
 
 
 /**
@@ -36,11 +40,27 @@ public class AmpCommandLineRunner extends CommandLineRunner {
    */
   private boolean typecheck_only = false;
 
+  private boolean pseudo_names = false;
+
+  private boolean is_production_env = true;
+
   /**
    * List of string suffixes to eliminate from the AST.
    */
-  ImmutableSet<String> suffixTypes = ImmutableSet.of(
-      "dev.fine");
+  ImmutableMap<String, Set<String>> suffixTypes = ImmutableMap.of(
+      "module$src$log.dev", ImmutableSet.of(
+          "assert", "fine", "assertElement", "assertString",
+          "assertNumber", "assertBoolean"),
+      "module$src$log.user", ImmutableSet.of("fine"));
+
+
+  ImmutableMap<String, Node> assignmentReplacements = ImmutableMap.of(
+      "IS_MINIFIED",
+      IR.trueNode());
+
+  ImmutableMap<String, Node> prodAssignmentReplacements = ImmutableMap.of(
+      "IS_DEV",
+      IR.falseNode());
 
   protected AmpCommandLineRunner(String[] args) {
     super(args);
@@ -52,7 +72,8 @@ public class AmpCommandLineRunner extends CommandLineRunner {
     }
     CompilerOptions options = super.createOptions();
     options.setCollapseProperties(true);
-    AmpPass ampPass = new AmpPass(getCompiler(), suffixTypes);
+    AmpPass ampPass = new AmpPass(getCompiler(), is_production_env, suffixTypes,
+        assignmentReplacements, prodAssignmentReplacements);
     options.addCustomPass(CustomPassExecutionTime.BEFORE_OPTIMIZATIONS, ampPass);
     options.setDevirtualizePrototypeMethods(true);
     options.setExtractPrototypeMemberDeclarations(true);
@@ -70,6 +91,7 @@ public class AmpCommandLineRunner extends CommandLineRunner {
     options.setRenamingPolicy(VariableRenamingPolicy.ALL,
         PropertyRenamingPolicy.ALL_UNQUOTED);
     options.setDisambiguatePrivateProperties(true);
+    options.setGeneratePseudoNames(pseudo_names);
     return options;
   }
 
@@ -85,11 +107,8 @@ public class AmpCommandLineRunner extends CommandLineRunner {
   protected CompilerOptions createTypeCheckingOptions() {
     CompilerOptions options = super.createOptions();
     options.setCheckTypes(true);
+    options.setInferTypes(true);
     return options;
-  }
-
-  protected void setTypeCheckOnly(boolean value) {
-    typecheck_only = value;
   }
 
   public static void main(String[] args) {
@@ -97,9 +116,12 @@ public class AmpCommandLineRunner extends CommandLineRunner {
 
     // Scan for TYPECHECK_ONLY string which we pass in as a --define
     for (String arg : args) {
-      if (arg.contains("TYPECHECK_ONLY=true")) {
-        runner.setTypeCheckOnly(true);
-        break;
+      if (arg.contains("--define=TYPECHECK_ONLY=true")) {
+        runner.typecheck_only = true;
+      } else if (arg.contains("--define=FORTESTING=true")) {
+        runner.is_production_env = false;
+      } else if (arg.contains("--define=PSEUDO_NAMES=true")) {
+        runner.pseudo_names = true;
       }
     }
 

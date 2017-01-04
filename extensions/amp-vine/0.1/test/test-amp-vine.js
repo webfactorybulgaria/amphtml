@@ -34,9 +34,7 @@ describe('amp-vine', () => {
       if (opt_responsive) {
         vine.setAttribute('layout', 'responsive');
       }
-      iframe.doc.body.appendChild(vine);
-      vine.implementation_.layoutCallback();
-      return vine;
+      return iframe.addElement(vine);
     });
   }
 
@@ -46,8 +44,6 @@ describe('amp-vine', () => {
       expect(iframe).to.not.be.null;
       expect(iframe.tagName).to.equal('IFRAME');
       expect(iframe.src).to.equal('https://vine.co/v/MdKjXez002d/embed/simple');
-      expect(iframe.getAttribute('width')).to.equal('400');
-      expect(iframe.getAttribute('height')).to.equal('400');
     });
   });
 
@@ -55,7 +51,7 @@ describe('amp-vine', () => {
     return getVine('MdKjXez002d', true).then(vine => {
       const iframe = vine.querySelector('iframe');
       expect(iframe).to.not.be.null;
-      expect(iframe.className).to.match(/-amp-fill-content/);
+      expect(iframe.className).to.match(/i-amphtml-fill-content/);
     });
   });
 

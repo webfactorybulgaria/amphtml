@@ -14,14 +14,45 @@
  * limitations under the License.
  */
 
-import {getElementService} from './element-service';
+import {
+  getElementServiceForDoc,
+  getElementServiceIfAvailableForDoc,
+} from './element-service';
 
 
 /**
- * @param {!Window} window
- * @return {!Promise<!InstrumentationService>}
+ * @param {!Node|!./service/ampdoc-impl.AmpDoc} nodeOrDoc
+ * @return {!Promise<!../extensions/amp-analytics/0.1/instrumentation.InstrumentationService>}
  */
-export function analyticsFor(window) {
-  return getElementService(window, 'amp-analytics-instrumentation',
-      'amp-analytics');
+export function analyticsForDoc(nodeOrDoc) {
+  return (/** @type {!Promise<
+            !../extensions/amp-analytics/0.1/instrumentation.InstrumentationService
+          >} */ (getElementServiceForDoc(
+                nodeOrDoc, 'amp-analytics-instrumentation', 'amp-analytics')));
 };
+
+/**
+ * @param {!Node|!./service/ampdoc-impl.AmpDoc} nodeOrDoc
+ * @return {!Promise<?../extensions/amp-analytics/0.1/instrumentation.InstrumentationService>}
+ */
+export function analyticsForDocOrNull(nodeOrDoc) {
+  return (/** @type {!Promise<
+            ?../extensions/amp-analytics/0.1/instrumentation.InstrumentationService
+          >} */ (getElementServiceIfAvailableForDoc(
+                nodeOrDoc, 'amp-analytics-instrumentation', 'amp-analytics')));
+};
+
+/**
+ * Helper method to trigger analytics event if amp-analytics is available.
+ * @param {!Node|!./service/ampdoc-impl.AmpDoc} nodeOrDoc
+ * @param {string} eventType
+ * @param {!Object<string, string>=} opt_vars A map of vars and their values.
+ */
+export function triggerAnalyticsEvent(nodeOrDoc, eventType, opt_vars) {
+  analyticsForDocOrNull(nodeOrDoc).then(analytics => {
+    if (!analytics) {
+      return;
+    }
+    analytics.triggerEvent(eventType, opt_vars);
+  });
+}

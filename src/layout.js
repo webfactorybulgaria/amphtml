@@ -20,7 +20,12 @@
  */
 
 import {dev, user} from './log';
+import {isFiniteNumber} from './types';
+import {setStyles} from './style';
+import {isExperimentOn} from './experiments';
 
+/** @const {string} */
+export const UX_EXPERIMENT = 'amp-ad-loading-ux';
 
 /**
  * @enum {string}
@@ -85,7 +90,9 @@ export const LOADING_ELEMENTS_ = {
   'AMP-IMG': true,
   'AMP-INSTAGRAM': true,
   'AMP-LIST': true,
+  'AMP-OOYALA-PLAYER': true,
   'AMP-PINTEREST': true,
+  'AMP-PLAYBUZZ': true,
   'AMP-VIDEO': true,
   'AMP-YOUTUBE': true,
 };
@@ -111,7 +118,7 @@ export function parseLayout(s) {
  * @return {string}
  */
 export function getLayoutClass(layout) {
-  return '-amp-layout-' + layout;
+  return 'i-amphtml-layout-' + layout;
 }
 
 
@@ -166,14 +173,14 @@ export function parseLength(s) {
 
 /**
  * Asserts that the supplied value is a non-percent CSS Length value.
- * @param {!LengthDef|string} length
+ * @param {!LengthDef|string|null|undefined} length
  * @return {!LengthDef}
  */
 export function assertLength(length) {
-  user.assert(
+  user().assert(
       /^\d+(\.\d+)?(px|em|rem|vh|vw|vmin|vmax|cm|mm|q|in|pc|pt)$/.test(length),
       'Invalid length value: %s', length);
-  return length;
+  return /** @type {!LengthDef} */ (length);
 }
 
 
@@ -186,7 +193,7 @@ export function assertLength(length) {
  * @return {!LengthDef}
  */
 export function assertLengthOrPercent(length) {
-  user.assert(/^\d+(\.\d+)?(px|em|rem|vh|vw|vmin|vmax|%)$/.test(length),
+  user().assert(/^\d+(\.\d+)?(px|em|rem|vh|vw|vmin|vmax|%)$/.test(length),
       'Invalid length or percent value: %s', length);
   return length;
 }
@@ -194,12 +201,13 @@ export function assertLengthOrPercent(length) {
 
 /**
  * Returns units from the CSS length value.
- * @param {!LengthDef} length
+ * @param {!LengthDef|string|null|undefined} length
  * @return {string}
  */
 export function getLengthUnits(length) {
   assertLength(length);
-  const m = user.assert(length.match(/[a-z]+/i),
+  dev().assertString(length);
+  const m = user().assert(length.match(/[a-z]+/i),
       'Failed to read units from %s', length);
   return m[0];
 }
@@ -207,11 +215,12 @@ export function getLengthUnits(length) {
 
 /**
  * Returns the numeric value of a CSS length value.
- * @param {!LengthDef|string} length
- * @return {number}
+ * @param {!LengthDef|string|null|undefined} length
+ * @return {number|undefined}
  */
 export function getLengthNumeral(length) {
-  return parseFloat(length);
+  const res = parseFloat(length);
+  return !isFiniteNumber(res) ? undefined : res;
 }
 
 
@@ -219,7 +228,7 @@ export function getLengthNumeral(length) {
  * Determines whether the tagName is a known element that has natural dimensions
  * in our runtime or the browser.
  * @param {string} tagName The element tag name.
- * @return {DimensionsDef}
+ * @return {boolean}
  */
 export function hasNaturalDimensions(tagName) {
   tagName = tagName.toUpperCase();
@@ -237,15 +246,17 @@ export function hasNaturalDimensions(tagName) {
  */
 export function getNaturalDimensions(element) {
   const tagName = element.tagName.toUpperCase();
-  dev.assert(naturalDimensions_[tagName] !== undefined);
+  dev().assert(naturalDimensions_[tagName] !== undefined);
   if (!naturalDimensions_[tagName]) {
     const doc = element.ownerDocument;
     const naturalTagName = tagName.replace(/^AMP\-/, '');
     const temp = doc.createElement(naturalTagName);
     // For audio, should no-op elsewhere.
     temp.controls = true;
-    temp.style.position = 'absolute';
-    temp.style.visibility = 'hidden';
+    setStyles(temp, {
+      position: 'absolute',
+      visibility: 'hidden',
+    });
     doc.body.appendChild(temp);
     naturalDimensions_[tagName] = {
       width: (temp./*OK*/offsetWidth || 1) + 'px',
@@ -253,7 +264,7 @@ export function getNaturalDimensions(element) {
     };
     doc.body.removeChild(temp);
   }
-  return naturalDimensions_[tagName];
+  return /** @type {DimensionsDef} */ (naturalDimensions_[tagName]);
 }
 
 
@@ -261,9 +272,16 @@ export function getNaturalDimensions(element) {
  * Whether the loading can be shown for the specified elemeent. This set has
  * to be externalized since the element's implementation may not be
  * downloaded yet.
- * @param {string} tagName The element tag name.
+ * @param {!Element} element.
  * @return {boolean}
  */
-export function isLoadingAllowed(tagName) {
-  return LOADING_ELEMENTS_[tagName.toUpperCase()] || false;
+export function isLoadingAllowed(element) {
+  const tagName = element.tagName.toUpperCase();
+  if (tagName == 'AMP-AD' || tagName == 'AMP-EMBED') {
+    const win = element.ownerDocument.defaultView;
+    if (isExperimentOn(win, UX_EXPERIMENT)) {
+      return true;
+    }
+  }
+  return LOADING_ELEMENTS_[tagName] || false;
 }

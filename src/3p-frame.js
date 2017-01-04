@@ -14,50 +14,58 @@
  * limitations under the License.
  */
 
-
+import {dev, user} from './log';
+import {documentInfoForDoc} from './document-info';
+import {isExperimentOn} from './experiments';
 import {getLengthNumeral} from '../src/layout';
-import {getService} from './service';
-import {documentInfoFor} from './document-info';
+import {tryParseJson} from './json';
 import {getMode} from './mode';
-import {getIntersectionChangeEntry} from './intersection-observer';
-import {preconnectFor} from './preconnect';
+import {getModeObject} from './mode-object';
 import {dashToCamelCase} from './string';
 import {parseUrl, assertHttpsUrl} from './url';
-import {timer} from './timer';
-import {user} from './log';
-import {viewportFor} from './viewport';
-import {viewerFor} from './viewer';
+import {viewerForDoc} from './viewer';
+import {urls} from './config';
+import {setStyle} from './style';
+import {domFingerprint} from './utils/dom-fingerprint';
 
+/**
+ * If true, then in experiment where the passing of context metadata
+ * has been moved from the iframe src hash to the iframe name attribute.
+ */
+const iframeContextInName = isExperimentOn(self, '3p-frame-context-in-name');
 
 /** @type {!Object<string,number>} Number of 3p frames on the for that type. */
 let count = {};
 
+/** @type {string} */
+let overrideBootstrapBaseUrl;
 
 /**
  * Produces the attributes for the ad template.
  * @param {!Window} parentWindow
  * @param {!Element} element
  * @param {string=} opt_type
+ * @param {Object=} opt_context
  * @return {!Object} Contains
  *     - type, width, height, src attributes of <amp-ad> tag. These have
  *       precedence over the data- attributes.
  *     - data-* attributes of the <amp-ad> tag with the "data-" removed.
  *     - A _context object for internal use.
  */
-function getFrameAttributes(parentWindow, element, opt_type) {
-  const startTime = timer.now();
+function getFrameAttributes(parentWindow, element, opt_type, opt_context) {
+  const startTime = Date.now();
   const width = element.getAttribute('width');
   const height = element.getAttribute('height');
   const type = opt_type || element.getAttribute('type');
-  user.assert(type, 'Attribute type required for <amp-ad>: %s', element);
+  user().assert(type, 'Attribute type required for <amp-ad>: %s', element);
   const attributes = {};
   // Do these first, as the other attributes have precedence.
   addDataAndJsonAttributes_(element, attributes);
   attributes.width = getLengthNumeral(width);
   attributes.height = getLengthNumeral(height);
   attributes.type = type;
-  const docInfo = documentInfoFor(parentWindow);
-  const viewer = viewerFor(parentWindow);
+  const docInfo = documentInfoForDoc(element);
+  const viewer = viewerForDoc(element);
   let locationHref = parentWindow.location.href;
   // This is really only needed for tests, but whatever. Children
   // see us as the logical origin, so telling them we are about:srcdoc
@@ -68,21 +76,21 @@ function getFrameAttributes(parentWindow, element, opt_type) {
   attributes._context = {
     referrer: viewer.getUnconfirmedReferrerUrl(),
     canonicalUrl: docInfo.canonicalUrl,
+    sourceUrl: docInfo.sourceUrl,
     pageViewId: docInfo.pageViewId,
-    clientId: element.getAttribute('ampcid'),
     location: {
       href: locationHref,
     },
     tagName: element.tagName,
-    mode: getMode(),
+    mode: getModeObject(),
+    canary: !!(parentWindow.AMP_CONFIG && parentWindow.AMP_CONFIG.canary),
     hidden: !viewer.isVisible(),
     amp3pSentinel: generateSentinel(parentWindow),
-    initialIntersection: getIntersectionChangeEntry(
-        timer.now(),
-        viewportFor(parentWindow).getRect(),
-        element.getLayoutBox()),
+    initialIntersection: element.getIntersectionChangeEntry(),
+    domFingerprint: domFingerprint(element),
     startTime,
   };
+  Object.assign(attributes._context, opt_context);
   const adSrc = element.getAttribute('src');
   if (adSrc) {
     attributes.src = adSrc;
@@ -94,30 +102,55 @@ function getFrameAttributes(parentWindow, element, opt_type) {
  * Creates the iframe for the embed. Applies correct size and passes the embed
  * attributes to the frame via JSON inside the fragment.
  * @param {!Window} parentWindow
- * @param {!Element} element
+ * @param {!Element} parentElement
  * @param {string=} opt_type
+ * @param {Object=} opt_context
  * @return {!Element} The iframe.
  */
-export function getIframe(parentWindow, element, opt_type) {
-  const attributes = getFrameAttributes(parentWindow, element, opt_type);
+export function getIframe(parentWindow, parentElement, opt_type, opt_context) {
+  // Check that the parentElement is already in DOM. This code uses a new and
+  // fast `isConnected` API and thus only used when it's available.
+  dev().assert(
+      parentElement['isConnected'] === undefined ||
+      parentElement['isConnected'] === true,
+      'Parent element must be in DOM');
+  const attributes =
+      getFrameAttributes(parentWindow, parentElement, opt_type, opt_context);
   const iframe = parentWindow.document.createElement('iframe');
   if (!count[attributes.type]) {
     count[attributes.type] = 0;
   }
+  count[attributes.type] += 1;
 
   const baseUrl = getBootstrapBaseUrl(parentWindow);
   const host = parseUrl(baseUrl).hostname;
-  // Pass ad attributes to iframe via the fragment.
-  const src = baseUrl + '#' + JSON.stringify(attributes);
-  const name = host + '_' + attributes.type + '_' + count[attributes.type]++;
+  let name;
+  if (iframeContextInName) {
+    // This name attribute may be overwritten if this frame is chosen to
+    // be the master frame. That is ok, as we will read the name off
+    // for our uses before that would occur.
+    // @see https://github.com/ampproject/amphtml/blob/master/3p/integration.js
+    name = JSON.stringify({
+      host,
+      type: attributes.type,
+      // https://github.com/ampproject/amphtml/pull/2955
+      count: count[attributes.type],
+      attributes,
+    });
 
-  iframe.src = src;
+    iframe.src = baseUrl;
+    iframe.ampLocation = parseUrl(baseUrl);
+  } else {
+    const src = baseUrl + '#' + JSON.stringify(attributes);
+    name = host + '_' + attributes.type + '_' + count[attributes.type];
+    iframe.src = src;
+    iframe.ampLocation = parseUrl(src);
+  }
   iframe.name = name;
-  iframe.ampLocation = parseUrl(src);
   iframe.width = attributes.width;
   iframe.height = attributes.height;
-  iframe.style.border = 'none';
   iframe.setAttribute('scrolling', 'no');
+  setStyle(iframe, 'border', 'none');
   /** @this {!Element} */
   iframe.onload = function() {
     // Chrome does not reflect the iframe readystate.
@@ -147,11 +180,9 @@ export function addDataAndJsonAttributes_(element, attributes) {
   }
   const json = element.getAttribute('json');
   if (json) {
-    let obj;
-    try {
-      obj = JSON.parse(json);
-    } catch (e) {
-      throw user.createError(
+    const obj = tryParseJson(json);
+    if (obj === undefined) {
+      throw user().createError(
           'Error parsing JSON in json attribute in element %s',
           element);
     }
@@ -162,18 +193,20 @@ export function addDataAndJsonAttributes_(element, attributes) {
 }
 
 /**
- * Prefetches URLs related to the bootstrap iframe.
- * @param {!Window} parentWindow
- * @return {string}
+ * Preloads URLs related to the bootstrap iframe.
+ * @param {!Window} window
+ * @param {!./preconnect.Preconnect} preconnect
  */
-export function prefetchBootstrap(window) {
+export function preloadBootstrap(window, preconnect) {
   const url = getBootstrapBaseUrl(window);
-  const preconnect = preconnectFor(window);
-  preconnect.prefetch(url, 'document');
+  preconnect.preload(url, 'document');
+
   // While the URL may point to a custom domain, this URL will always be
   // fetched by it.
-  preconnect.prefetch(
-      'https://3p.ampproject.net/$internalRuntimeVersion$/f.js', 'script');
+  const scriptUrl = getMode().localDev
+      ? getAdsLocalhost(window) + '/dist.3p/current/integration.js'
+      : `${urls.thirdParty}/$internalRuntimeVersion$/f.js`;
+  preconnect.preload(scriptUrl, 'script');
 }
 
 /**
@@ -184,28 +217,53 @@ export function prefetchBootstrap(window) {
  * @visibleForTesting
  */
 export function getBootstrapBaseUrl(parentWindow, opt_strictForUnitTest) {
-  return getService(window, 'bootstrapBaseUrl', () => {
-    return getCustomBootstrapBaseUrl(parentWindow, opt_strictForUnitTest) ||
-      getDefaultBootstrapBaseUrl(parentWindow);
-  });
+  // The value is cached in a global variable called `bootstrapBaseUrl`;
+  const bootstrapBaseUrl = parentWindow.bootstrapBaseUrl;
+  if (bootstrapBaseUrl) {
+    return bootstrapBaseUrl;
+  }
+  return parentWindow.bootstrapBaseUrl =
+      getCustomBootstrapBaseUrl(parentWindow, opt_strictForUnitTest)
+          || getDefaultBootstrapBaseUrl(parentWindow);
+}
+
+export function setDefaultBootstrapBaseUrlForTesting(url) {
+  overrideBootstrapBaseUrl = url;
+}
+
+export function resetBootstrapBaseUrlForTesting(win) {
+  win.bootstrapBaseUrl = undefined;
 }
 
 /**
  * Returns the default base URL for 3p bootstrap iframes.
  * @param {!Window} parentWindow
+ * @param {string=} opt_srcFileBasename
  * @return {string}
  */
-function getDefaultBootstrapBaseUrl(parentWindow) {
-  if (getMode().localDev || parentWindow.AMP_TEST) {
-    const prefix = parentWindow.AMP_TEST ? '/base' : '';
-    return 'http://ads.localhost:' +
-        (parentWindow.location.port || parentWindow.parent.location.port) +
-        prefix + '/dist.3p/current' +
-        (getMode().minified ? '-min/frame' : '/frame.max') +
-        '.html';
+export function getDefaultBootstrapBaseUrl(parentWindow, opt_srcFileBasename) {
+  const srcFileBasename = opt_srcFileBasename || 'frame';
+  if (getMode().localDev || getMode().test) {
+    if (overrideBootstrapBaseUrl) {
+      return overrideBootstrapBaseUrl;
+    }
+    return getAdsLocalhost(parentWindow)
+        + '/dist.3p/'
+        + (getMode().minified ? `$internalRuntimeVersion$/${srcFileBasename}`
+            : `current/${srcFileBasename}.max`)
+        + '.html';
   }
   return 'https://' + getSubDomain(parentWindow) +
-      '.ampproject.net/$internalRuntimeVersion$/frame.html';
+      `.${urls.thirdPartyFrameHost}/$internalRuntimeVersion$/` +
+      `${srcFileBasename}.html`;
+}
+
+function getAdsLocalhost(win) {
+  if (urls.localDev) {
+    return `//${urls.thirdPartyFrameHost}`;
+  }
+  return 'http://ads.localhost:'
+      + (win.location.port || win.parent.location.port);
 }
 
 /**
@@ -224,7 +282,7 @@ export function getSubDomain(win) {
  * @param {!Window} win
  * @return {string}
  */
-function getRandom(win) {
+export function getRandom(win) {
   let rand;
   if (win.crypto && win.crypto.getRandomValues) {
     // By default use 2 32 bit integers.
@@ -252,14 +310,14 @@ function getCustomBootstrapBaseUrl(parentWindow, opt_strictForUnitTest) {
     return null;
   }
   const url = assertHttpsUrl(meta.getAttribute('content'), meta);
-  user.assert(url.indexOf('?') == -1,
+  user().assert(url.indexOf('?') == -1,
       '3p iframe url must not include query string %s in element %s.',
       url, meta);
   // This is not a security primitive, we just don't want this to happen in
   // practice. People could still redirect to the same origin, but they cannot
   // redirect to the proxy origin which is the important one.
   const parsed = parseUrl(url);
-  user.assert((parsed.hostname == 'localhost' && !opt_strictForUnitTest) ||
+  user().assert((parsed.hostname == 'localhost' && !opt_strictForUnitTest) ||
       parsed.origin != parseUrl(parentWindow.location.href).origin,
       '3p iframe url must not be on the same origin as the current doc' +
       'ument %s (%s) in element %s. See https://github.com/ampproject/amphtml' +
@@ -290,4 +348,67 @@ export function generateSentinel(parentWindow) {
  */
 export function resetCountForTesting() {
   count = {};
+}
+
+
+/** @const */
+const AMP_MESSAGE_PREFIX = 'amp-';
+
+/** @enum {string} */
+export const MessageType = {
+  // For amp-ad
+  SEND_EMBED_STATE: 'send-embed-state',
+  EMBED_STATE: 'embed-state',
+  SEND_EMBED_CONTEXT: 'send-embed-context',
+  EMBED_CONTEXT: 'embed-context',
+  SEND_INTERSECTIONS: 'send-intersections',
+  INTERSECTION: 'intersection',
+  EMBED_SIZE: 'embed-size',
+  EMBED_SIZE_CHANGED: 'embed-size-changed',
+  EMBED_SIZE_DENIED: 'embed-size-denied',
+
+  // For amp-inabox
+  SEND_POSITIONS: 'send-positions',
+  POSITION: 'position',
+};
+
+/**
+ * Serialize an AMP post message. Output looks like:
+ * 'amp-011481323099490{"type":"position","sentinel":"12345","foo":"bar"}'
+ * @param {string} type
+ * @param {string} sentinel
+ * @param {Object=} data
+ * @param {?string=} rtvVersion
+ * @returns {string}
+ */
+export function serializeMessage(type, sentinel, data = {}, rtvVersion = null) {
+  // TODO: consider wrap the data in a "data" field. { type, sentinal, data }
+  const message = data;
+  message.type = type;
+  message.sentinel = sentinel;
+  return AMP_MESSAGE_PREFIX + (rtvVersion || '') + JSON.stringify(message);
+}
+
+/**
+ * Deserialize an AMP post message.
+ * Returns null if it's not valid AMP message format.
+ *
+ * @param message {*}
+ * @returns {?JSONType}
+ */
+export function deserializeMessage(message) {
+  if (typeof message !== 'string' || message.indexOf(AMP_MESSAGE_PREFIX) != 0) {
+    return null;
+  }
+  const startPos = message.indexOf('{');
+  if (startPos == -1) {
+    dev().error('MESSAGING', 'Failed to parse message: ' + message);
+    return null;
+  }
+  try {
+    return /** @type {!JSONType} */ (JSON.parse(message.substr(startPos)));
+  } catch (e) {
+    dev().error('MESSAGING', 'Failed to parse message: ' + message, e);
+    return null;
+  }
 }

@@ -22,30 +22,33 @@
 import {isObject} from './types';
 
 
+// NOTE Type are changed to {*} because of
+// https://github.com/google/closure-compiler/issues/1999
+
 /**
  * JSON scalar. It's either string, number or boolean.
- * @typedef {string|number|boolean}
+ * @typedef {*} should be string|number|boolean
  */
 let JSONScalarDef;
 
 
 /**
  * JSON object. It's a map with string keys and JSON values.
- * @typedef {!Object<string, ?JSONValueDef>}
+ * @typedef {*} should be !Object<string, ?JSONValueDef>
  */
 let JSONObjectDef;
 
 
 /**
  * JSON array. It's an array with JSON values.
- * @typedef {!Array<?JSONValueDef>}
+ * @typedef {*} should be !Array<?JSONValueDef>
  */
 let JSONArrayDef;
 
 
 /**
  * JSON value. It's either a scalar, an object or an array.
- * @typedef {!JSONScalarDef|!JSONObjectDef|!JSONArrayDef}
+ * @typedef {*} should be !JSONScalarDef|!JSONObjectDef|!JSONArrayDef
  */
 let JSONValueDef;
 
@@ -58,7 +61,7 @@ let JSONValueDef;
 export function recreateNonProtoObject(obj) {
   const copy = Object.create(null);
   for (const k in obj) {
-    if (!obj.hasOwnProperty(k)) {
+    if (!hasOwnProperty(obj, k)) {
       continue;
     }
     const v = obj[k];
@@ -79,6 +82,11 @@ export function recreateNonProtoObject(obj) {
  * @return {?JSONValueDef|undefined}
  */
 export function getValueForExpr(obj, expr) {
+  // The `.` indicates "the object itself".
+  if (expr == '.') {
+    return obj;
+  }
+  // Otherwise, navigate via properties.
   const parts = expr.split('.');
   let value = obj;
   for (let i = 0; i < parts.length; i++) {
@@ -89,11 +97,45 @@ export function getValueForExpr(obj, expr) {
     }
     if (!isObject(value) ||
             value[part] === undefined ||
-            value.hasOwnProperty && !value.hasOwnProperty(part)) {
+            !hasOwnProperty(value, part)) {
       value = undefined;
       break;
     }
     value = value[part];
   }
   return value;
+}
+
+/**
+ * Parses the given `json` string without throwing an exception if not valid.
+ * Returns `undefined` if parsing fails.
+ * Returns the `Object` corresponding to the JSON string when parsing succeeds.
+ * @param {*} json JSON string to parse
+ * @param {function(!Error)=} opt_onFailed Optional function that will be called with
+ *     the error if parsing fails.
+ * @return {?JSONValueDef|undefined}
+ */
+export function tryParseJson(json, opt_onFailed) {
+  try {
+    return JSON.parse(/** @type {string} */ (json));
+  } catch (e) {
+    if (opt_onFailed) {
+      opt_onFailed(e);
+    }
+    return undefined;
+  }
+}
+
+
+/**
+ * @param {*} obj
+ * @param {string} key
+ * @return {boolean}
+ */
+function hasOwnProperty(obj, key) {
+  if (obj == null || typeof obj != 'object') {
+    return false;
+  }
+  return Object.prototype.hasOwnProperty.call(
+      /** @type {!Object} */ (obj), key);
 }

@@ -26,9 +26,10 @@ import * as sinon from 'sinon';
 
 describe('EventHelper', () => {
 
-  function getEvent(name) {
+  function getEvent(name, target) {
     const event = document.createEvent('Event');
     event.initEvent(name, true, true);
+    event.testTarget = target;
     return event;
   }
 
@@ -44,6 +45,7 @@ describe('EventHelper', () => {
     loadObservable = new Observable();
     errorObservable = new Observable();
     element = {
+      tagName: 'TEST',
       complete: false,
       readyState: '',
       addEventListener: function(type, callback) {
@@ -76,7 +78,7 @@ describe('EventHelper', () => {
   });
 
   it('listen', () => {
-    const event = getEvent('load');
+    const event = getEvent('load', element);
     let c = 0;
     const handler = e => {
       c++;
@@ -101,7 +103,7 @@ describe('EventHelper', () => {
   });
 
   it('listenOnce', () => {
-    const event = getEvent('load');
+    const event = getEvent('load', element);
     let c = 0;
     const handler = e => {
       c++;
@@ -122,7 +124,7 @@ describe('EventHelper', () => {
   });
 
   it('listenOnce - cancel', () => {
-    const event = getEvent('load');
+    const event = getEvent('load', element);
     let c = 0;
     const handler = e => {
       c++;
@@ -142,7 +144,7 @@ describe('EventHelper', () => {
   });
 
   it('listenOncePromise - load event', () => {
-    const event = getEvent('load');
+    const event = getEvent('load', element);
     const promise = listenOncePromise(element, 'load').then(result => {
       expect(result).to.equal(event);
     });
@@ -151,7 +153,7 @@ describe('EventHelper', () => {
   });
 
   it('listenOncePromise - with time limit', () => {
-    const event = getEvent('load');
+    const event = getEvent('load', element);
     const promise = expect(listenOncePromise(element, 'load', false, 100))
       .to.eventually.become(event);
     clock.tick(99);
@@ -178,6 +180,18 @@ describe('EventHelper', () => {
     expect(isLoaded(element)).to.equal(true);
   });
 
+  it('isLoaded for Window', () => {
+    expect(isLoaded(window)).to.equal(true);
+    const win = {
+      document: {
+        readyState: 'interactive',
+      },
+    };
+    expect(isLoaded(win)).to.equal(false);
+    win.document.readyState = 'complete';
+    expect(isLoaded(win)).to.equal(true);
+  });
+
   it('loadPromise - already complete', () => {
     element.complete = true;
     return loadPromise(element).then(result => {
@@ -196,7 +210,7 @@ describe('EventHelper', () => {
     const promise = loadPromise(element).then(result => {
       expect(result).to.equal(element);
     });
-    loadObservable.fire(getEvent('load'));
+    loadObservable.fire(getEvent('load', element));
     return promise;
   });
 
@@ -206,9 +220,9 @@ describe('EventHelper', () => {
     }).then(() => {
       throw new Error('Should not be reached.');
     }, reason => {
-      expect(reason.message).to.include('Failed HTTP request for');
+      expect(reason.message).to.include('Failed to load');
     });
-    errorObservable.fire(getEvent('error'));
+    errorObservable.fire(getEvent('error', element));
     return promise;
   });
 

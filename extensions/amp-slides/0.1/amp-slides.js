@@ -32,18 +32,13 @@ class AmpSlides extends AMP.BaseElement {
   }
 
   /** @override */
-  isReadyToBuild() {
-    return this.getRealChildren().length > 0;
-  }
-
-  /** @override */
   buildCallback() {
     /** @private {!Array<!Element>} */
     this.slides_ = this.getRealChildren();
     this.slides_.forEach((slide, i) => {
       this.setAsOwner(slide);
       // Only the first element is initially visible.
-      slide.style.display = i > 0 ? 'none' : 'block';
+      st.setStyle(slide, 'display', i > 0 ? 'none' : 'block');
       this.applyFillContent(slide);
     });
 
@@ -124,8 +119,9 @@ class AmpSlides extends AMP.BaseElement {
       if (!animate) {
         this.commitSwitch_(oldSlide, newSlide);
       } else {
-        oldSlide.style.zIndex = 0;
-        Animation.animate(this.createTransition_(oldSlide, newSlide, dir),
+        st.setStyle(oldSlide, 'zIndex', 0);
+        Animation.animate(this.element,
+            this.createTransition_(oldSlide, newSlide, dir),
             200, 'ease-out').thenAlways(() => {
               this.commitSwitch_(oldSlide, newSlide);
               this.preloadNext_(dir);
@@ -175,16 +171,20 @@ class AmpSlides extends AMP.BaseElement {
    * @private
    */
   commitSwitch_(oldSlide, newSlide) {
-    oldSlide.style.display = 'none';
-    oldSlide.style.zIndex = 0;
-    oldSlide.style.transform = '';
-    oldSlide.style.transition = '';
-    oldSlide.style.opacity = 1;
-    newSlide.style.display = 'block';
-    newSlide.style.zIndex = 0;
-    newSlide.style.transform = '';
-    newSlide.style.transition = '';
-    newSlide.style.opacity = 1;
+    st.setStyles(oldSlide, {
+      display: 'none',
+      zIndex: 0,
+      transform: '',
+      transition: '',
+      opacity: 1,
+    });
+    st.setStyles(newSlide, {
+      display: 'block',
+      zIndex: 0,
+      transform: '',
+      transition: '',
+      opacity: 1,
+    });
     this.scheduleLayout(newSlide);
     this.updateInViewport(oldSlide, false);
     this.updateInViewport(newSlide, true);

@@ -31,11 +31,6 @@ class AmpFitText extends AMP.BaseElement {
   }
 
   /** @override */
-  isReadyToBuild() {
-    return this.element.firstChild != null;
-  }
-
-  /** @override */
   buildCallback() {
 
     /** @private @const */
@@ -56,7 +51,6 @@ class AmpFitText extends AMP.BaseElement {
       position: 'absolute',
       top: 0,
       left: 0,
-      right: 0,
       zIndex: 1,
       visibility: 'hidden',
       lineHeight: `${LINE_HEIGHT_EM_}em`,
@@ -97,9 +91,10 @@ class AmpFitText extends AMP.BaseElement {
   /** @private */
   updateFontSize_() {
     const maxHeight = this.element./*OK*/offsetHeight;
-    const fontSize = calculateFontSize_(this.measurer_, maxHeight,
+    const maxWidth = this.element./*OK*/offsetWidth;
+    const fontSize = calculateFontSize_(this.measurer_, maxHeight, maxWidth,
         this.minFontSize_, this.maxFontSize_);
-    this.contentWrapper_.style.fontSize = st.px(fontSize);
+    st.setStyle(this.contentWrapper_, 'fontSize', st.px(fontSize));
     updateOverflow_(this.contentWrapper_, this.measurer_, maxHeight,
         fontSize);
   }
@@ -114,15 +109,16 @@ class AmpFitText extends AMP.BaseElement {
  * @return {number}
  * @private  Visible for testing only!
  */
-export function calculateFontSize_(measurer, expectedHeight,
+export function calculateFontSize_(measurer, expectedHeight, expectedWidth,
     minFontSize, maxFontSize) {
   maxFontSize++;
   // Binomial search for the best font size.
   while (maxFontSize - minFontSize > 1) {
     const mid = Math.floor((minFontSize + maxFontSize) / 2);
-    measurer.style.fontSize = st.px(mid);
+    st.setStyle(measurer, 'fontSize', st.px(mid));
     const height = measurer./*OK*/offsetHeight;
-    if (height > expectedHeight) {
+    const width = measurer./*OK*/offsetWidth;
+    if (height > expectedHeight || width > expectedWidth) {
       maxFontSize = mid;
     } else {
       minFontSize = mid;
@@ -140,7 +136,7 @@ export function calculateFontSize_(measurer, expectedHeight,
  * @private  Visible for testing only!
  */
 export function updateOverflow_(content, measurer, maxHeight, fontSize) {
-  measurer.style.fontSize = st.px(fontSize);
+  st.setStyle(measurer, 'fontSize', st.px(fontSize));
   const overflown = measurer./*OK*/offsetHeight > maxHeight;
   const lineHeight = fontSize * LINE_HEIGHT_EM_;
   const numberOfLines = Math.floor(maxHeight / lineHeight);

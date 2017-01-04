@@ -14,13 +14,16 @@
  * limitations under the License.
  */
 
+import {AmpDocSingle} from '../../src/service/ampdoc-impl';
 import {FixedLayer} from '../../src/service/fixed-layer';
+import {installPlatformService} from '../../src/service/platform-impl';
 import * as sinon from 'sinon';
 
 
 describe('FixedLayer', () => {
   let sandbox;
   let documentApi;
+  let ampdoc;
   let vsyncApi;
   let vsyncTasks;
   let docBody, docElem;
@@ -35,6 +38,7 @@ describe('FixedLayer', () => {
     allRules = {};
 
     docBody = createElement('docBody');
+    docBody.id = 'doc-body-id';
     docElem = createElement('docElem');
 
     element1 = createElement('element1');
@@ -78,6 +82,7 @@ describe('FixedLayer', () => {
           ownerNode: createStyleNode('amp-custom'),
           cssRules: [
             createValidRule('#amp-custom-rule1', [element1]),
+            createValidRule('#doc-body-id #amp-custom-rule1', [element1]),
             createValidRule('#amp-custom-rule2', [element1, element2]),
             createUnrelatedRule('#amp-custom-rule3', [element3]),
             {
@@ -125,6 +130,7 @@ describe('FixedLayer', () => {
             },
           };
         },
+        navigator: window.navigator,
       },
       createElement: name => {
         return createElement(name);
@@ -132,6 +138,9 @@ describe('FixedLayer', () => {
       documentElement: docElem,
       body: docBody,
     };
+    documentApi.defaultView.document = documentApi;
+    ampdoc = new AmpDocSingle(documentApi.defaultView);
+    installPlatformService(documentApi.defaultView);
 
     vsyncTasks = [];
     vsyncApi = {
@@ -182,6 +191,9 @@ describe('FixedLayer', () => {
       setAttribute: (name, value) => {
         attrs[name] = value;
       },
+      removeAttribute: name => {
+        delete attrs[name];
+      },
       appendChild: child => {
         child.parentElement = elem;
         children.push(child);
@@ -200,6 +212,9 @@ describe('FixedLayer', () => {
         }
         newChild.parentElement = elem;
         children.push(newChild);
+      },
+      cloneNode() {
+        return createElement(this.id);
       },
     };
     Object.defineProperty(elem, 'offsetTop', {
@@ -255,7 +270,7 @@ describe('FixedLayer', () => {
     let fixedLayer;
 
     beforeEach(() => {
-      fixedLayer = new FixedLayer(documentApi, vsyncApi,
+      fixedLayer = new FixedLayer(ampdoc, vsyncApi,
           /* paddingTop */ 11, /* transfer */ false);
       fixedLayer.setup();
     });
@@ -280,6 +295,7 @@ describe('FixedLayer', () => {
         element: element1,
         selectors: [
           '#amp-custom-rule1',
+          '#doc-body-id #amp-custom-rule1',
           '#amp-custom-rule2',
           '#amp-custom-media-rule1',
           '#other-rule1',
@@ -311,6 +327,20 @@ describe('FixedLayer', () => {
       expect(fe.id).to.equal('F2');
       expect(fe.element).to.equal(element3);
       expect(fe.selectors).to.deep.equal(['*']);
+
+      // Remove.
+      fixedLayer.removeElement(element3);
+      expect(fixedLayer.fixedElements_).to.have.length(2);
+
+      //Add with forceTransfer
+      fixedLayer.addElement(element3, '*', true);
+      expect(updateStub.callCount).to.equal(2);
+      expect(fixedLayer.fixedElements_).to.have.length(3);
+      const fe1 = fixedLayer.fixedElements_[2];
+      expect(fe1.id).to.equal('F3');
+      expect(fe1.element).to.equal(element3);
+      expect(fe1.selectors).to.deep.equal(['*']);
+      expect(fe1.forceTransfer).to.be.true;
 
       // Remove.
       fixedLayer.removeElement(element3);
@@ -416,6 +446,21 @@ describe('FixedLayer', () => {
 
     it('should collect for implicit top = auto, but not update top', () => {
       element1.computedStyle['position'] = 'fixed';
+      element1.computedStyle['top'] = '12px';
+      element1.autoOffsetTop = 12;
+      element1.offsetWidth = 10;
+      element1.offsetHeight = 10;
+
+      expect(vsyncTasks).to.have.length(1);
+      const state = {};
+      vsyncTasks[0].measure(state);
+
+      expect(state['F0'].fixed).to.equal(true);
+      expect(state['F0'].top).to.equal('');
+    });
+
+    it('should override implicit top = auto to 0 when equals padding', () => {
+      element1.computedStyle['position'] = 'fixed';
       element1.computedStyle['top'] = '11px';
       element1.autoOffsetTop = 11;
       element1.offsetWidth = 10;
@@ -426,7 +471,39 @@ describe('FixedLayer', () => {
       vsyncTasks[0].measure(state);
 
       expect(state['F0'].fixed).to.equal(true);
-      expect(state['F0'].top).to.equal('');
+      expect(state['F0'].top).to.equal('0px');
+    });
+
+    it('should override implicit top = auto to 0 w/transient padding', () => {
+      element1.computedStyle['position'] = 'fixed';
+      element1.computedStyle['top'] = '11px';
+      element1.autoOffsetTop = 11;
+      element1.offsetWidth = 10;
+      element1.offsetHeight = 10;
+
+      expect(vsyncTasks).to.have.length(1);
+      const state = {};
+      vsyncTasks[0].measure(state);
+
+      expect(state['F0'].fixed).to.equal(true);
+      expect(state['F0'].top).to.equal('0px');
+
+      // Update to transient padding.
+      sandbox.stub(fixedLayer, 'update', () => {});
+      fixedLayer.updatePaddingTop(22, /* transient */ true);
+      vsyncTasks[0].measure(state);
+      expect(state['F0'].fixed).to.equal(true);
+      expect(state['F0'].top).to.equal('0px');
+      expect(fixedLayer.paddingTop_).to.equal(22);
+      expect(fixedLayer.committedPaddingTop_).to.equal(11);
+
+      // Update to non-transient padding.
+      fixedLayer.updatePaddingTop(22, /* transient */ false);
+      vsyncTasks[0].measure(state);
+      expect(state['F0'].fixed).to.equal(true);
+      expect(state['F0'].top).to.equal(''); // Reset completely.
+      expect(fixedLayer.paddingTop_).to.equal(22);
+      expect(fixedLayer.committedPaddingTop_).to.equal(22);
     });
 
     it('should always collect and update top = 0', () => {
@@ -507,13 +584,57 @@ describe('FixedLayer', () => {
       expect(fe.fixedNow).to.be.false;
       expect(fe.element.style.top).to.equal('');
     });
+
+    it('should transform fixed elements with anchored top', () => {
+      const fe = fixedLayer.fixedElements_[0];
+      fixedLayer.mutateFixedElement_(fe, 1, {
+        fixed: true,
+        top: '17px',
+      });
+      expect(fe.fixedNow).to.be.true;
+      expect(fe.element.style.top).to.equal('calc(17px + 11px)');
+
+      fixedLayer.transformMutate('translateY(-10px)');
+      expect(fe.element.style.transform).to.equal('translateY(-10px)');
+      expect(fe.element.style.transition).to.equal('none');
+
+      // Reset back.
+      fixedLayer.transformMutate(null);
+      expect(fe.element.style.transform).to.equal('');
+      expect(fe.element.style.transition).to.equal('');
+    });
+
+    it('should compound transform with anchored top', () => {
+      const fe = fixedLayer.fixedElements_[0];
+      fixedLayer.mutateFixedElement_(fe, 1, {
+        fixed: true,
+        top: '17px',
+        transform: 'scale(2)',
+      });
+
+      fixedLayer.transformMutate('translateY(-10px)');
+      expect(fe.element.style.transform).to.equal('scale(2) translateY(-10px)');
+    });
+
+    it('should NOT transform fixed elements w/o anchored top', () => {
+      const fe = fixedLayer.fixedElements_[0];
+      fe.element.style.transform = '';
+      fixedLayer.mutateFixedElement_(fe, 1, {
+        fixed: true,
+        top: '',
+      });
+      expect(fe.fixedNow).to.be.true;
+
+      fixedLayer.transformMutate('translateY(-10px)');
+      expect(fe.element.style.transform).to.equal('');
+    });
   });
 
   describe('with-transfer', () => {
     let fixedLayer;
 
     beforeEach(() => {
-      fixedLayer = new FixedLayer(documentApi, vsyncApi,
+      fixedLayer = new FixedLayer(ampdoc, vsyncApi,
           /* paddingTop */ 11, /* transfer */ true);
       fixedLayer.setup();
     });
@@ -576,6 +697,27 @@ describe('FixedLayer', () => {
 
       expect(vsyncTasks).to.have.length(1);
       const state = {};
+      vsyncTasks[0].measure(state);
+
+      expect(state['F0'].fixed).to.be.true;
+      expect(state['F0'].transferrable).to.equal(true);
+    });
+
+    it('should not disregard invisible element if it has forceTransfer', () => {
+      element1.computedStyle['position'] = 'fixed';
+      element1.offsetWidth = 0;
+      element1.offsetHeight = 0;
+
+      expect(vsyncTasks).to.have.length(1);
+      let state = {};
+      vsyncTasks[0].measure(state);
+      expect(state['F0'].fixed).to.be.false;
+      expect(state['F0'].transferrable).to.equal(false);
+
+      // Add.
+      state = {};
+      fixedLayer.setupFixedElement_(element1, '*', true);
+      expect(vsyncTasks).to.have.length(1);
       vsyncTasks[0].measure(state);
 
       expect(state['F0'].fixed).to.be.true;
@@ -673,6 +815,7 @@ describe('FixedLayer', () => {
       expect(fe.placeholder).to.exist;
       expect(fe.element.parentElement).to.equal(fixedLayer.fixedLayer_);
       expect(fixedLayer.fixedLayer_).to.exist;
+      expect(fixedLayer.fixedLayer_.id).to.equal('doc-body-id');
 
       // Remove from DOM.
       fe.element.parentElement.removeChild(fe.element);

@@ -15,9 +15,13 @@
 #
 
 tags: {  # amp-fit-text
-  tag_name: "script"
+  html_format: AMP
+  html_format: AMP4ADS
+  tag_name: "SCRIPT"
   spec_name: "amp-fit-text extension .js script"
-  mandatory_parent: "head"
+  mandatory_parent: "HEAD"
+  unique_warning: true
+  also_requires_tag_warning: "amp-fit-text"
   attrs: {
     name: "async"
     mandatory: true
@@ -36,7 +40,7 @@ tags: {  # amp-fit-text
   }
   attrs: {
     name: "type"
-    value: "text/javascript"
+    value_casei: "text/javascript"
   }
   cdata: {
     blacklisted_cdata_regex: {
@@ -49,10 +53,11 @@ tags: {  # amp-fit-text
 # TODO(greggrothaus): amp-fit-text's attribute spec need flushing
 # out now that the spec is available.
 tags: {  # <amp-fit-text>
-  tag_name: "amp-fit-text"
-  disallowed_ancestor: "head"
+  html_format: AMP
+  html_format: AMP4ADS
+  tag_name: "AMP-FIT-TEXT"
   # <amp-fit-text> is whitelisted for <amp-sidebar>, otherwise:
-  # disallowed_ancestor: "amp-sidebar"
+  # disallowed_ancestor: "AMP-SIDEBAR"
   also_requires_tag: "amp-fit-text extension .js script"
   attrs: { name: "max-font-size" }
   attrs: { name: "min-font-size" }

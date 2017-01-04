@@ -14,9 +14,13 @@
 # limitations under the license.
 #
 tags: {  # amp-dailymotion
-  tag_name: "script"
+  html_format: AMP
+  html_format: AMP4ADS
+  tag_name: "SCRIPT"
   spec_name: "amp-dailymotion extension .js script"
-  mandatory_parent: "head"
+  mandatory_parent: "HEAD"
+  unique_warning: true
+  also_requires_tag_warning: "amp-dailymotion"
   attrs: {
     name: "async"
     mandatory: true
@@ -35,7 +39,7 @@ tags: {  # amp-dailymotion
   }
   attrs: {
     name: "type"
-    value: "text/javascript"
+    value_casei: "text/javascript"
   }
   cdata: {
     blacklisted_cdata_regex: {
@@ -46,9 +50,10 @@ tags: {  # amp-dailymotion
   spec_url: "https://www.ampproject.org/docs/reference/extended/amp-dailymotion.html"
 }
 tags: {  # <amp-dailymotion>
-  tag_name: "amp-dailymotion"
-  disallowed_ancestor: "head"
-  disallowed_ancestor: "amp-sidebar"
+  html_format: AMP
+  html_format: AMP4ADS
+  tag_name: "AMP-DAILYMOTION"
+  disallowed_ancestor: "AMP-SIDEBAR"
   also_requires_tag: "amp-dailymotion extension .js script"
   attrs: { name: "data-endscreen-enable" value_regex: "true|false" }
   attrs: { name: "data-info" value_regex: "true|false" }

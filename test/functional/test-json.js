@@ -14,11 +14,20 @@
  * limitations under the License.
  */
 
-import {getValueForExpr, recreateNonProtoObject} from '../../src/json';
+import {
+  getValueForExpr,
+  recreateNonProtoObject,
+  tryParseJson,
+} from '../../src/json';
 
 describe('json', () => {
 
   describe('getValueForExpr', () => {
+    it('should return self for "."', () => {
+      const obj = {str: 'A', num: 1, bool: true, val: null};
+      expect(getValueForExpr(obj, '.')).to.equal(obj);
+    });
+
     it('should return a simple value', () => {
       const obj = {str: 'A', num: 1, bool: true, val: null};
       expect(getValueForExpr(obj, 'str')).to.equal('A');
@@ -104,6 +113,37 @@ describe('json', () => {
       expect(copy.child).to.deep.equal(original.child);
       expect(copy.child === original.child).to.be.false;
       expect(copy.child.__proto__).to.be.undefined;
+    });
+  });
+
+  describe('tryParseJson', () => {
+    it('should return object for valid json', () => {
+      const json = '{"key": "value"}';
+      const result = tryParseJson(json);
+      expect(result.key).to.equal('value');
+    });
+
+    it('should not throw and return undefined for invalid json', () => {
+      const json = '{"key": "val';
+      expect(tryParseJson.bind(null, json)).to.not.throw;
+      const result = tryParseJson(json);
+      expect(result).to.be.undefined;
+    });
+
+    it('should call onFailed for invalid and not call for valid json', () => {
+      let onFailedCalled = false;
+      const validJson = '{"key": "value"}';
+      tryParseJson(validJson, () => {
+        onFailedCalled = true;
+      });
+      expect(onFailedCalled).to.be.false;
+
+      const invalidJson = '{"key": "val';
+      tryParseJson(invalidJson, err => {
+        onFailedCalled = true;
+        expect(err).to.exist;
+      });
+      expect(onFailedCalled).to.be.true;
     });
   });
 });

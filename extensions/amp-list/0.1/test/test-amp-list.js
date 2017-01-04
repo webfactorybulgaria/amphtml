@@ -15,6 +15,7 @@
  */
 
 import {AmpList} from '../amp-list';
+import {ampdocServiceFor} from '../../../../src/ampdoc';
 import {templatesFor} from '../../../../src/template';
 import {installXhrService} from '../../../../src/service/xhr-impl';
 import * as sinon from 'sinon';
@@ -40,8 +41,11 @@ describe('amp-list component', () => {
     xhr = installXhrService(window);
     xhrMock = sandbox.mock(xhr);
 
+    const ampdoc = ampdocServiceFor(window).getAmpDoc();
+
     element = document.createElement('div');
     element.setAttribute('src', 'https://data.com/list.json');
+    element.getAmpDoc = () => ampdoc;
     list = new AmpList(element);
     list.buildCallback();
     listMock = sandbox.mock(list);
@@ -79,13 +83,38 @@ describe('amp-list component', () => {
         measureFunc = func;
       },
     }).once();
-    listMock.expects('attemptChangeHeight').withExactArgs(newHeight);
+    listMock.expects('attemptChangeHeight').withExactArgs(newHeight).returns(
+        Promise.resolve());
     return list.layoutCallback().then(() => {
       return Promise.all([xhrPromise, renderPromise]).then(() => {
         expect(list.container_.contains(itemElement)).to.be.true;
         expect(measureFunc).to.exist;
         measureFunc();
       });
+    });
+  });
+
+  it('should fail to load b/c data is absent', () => {
+    xhrMock.expects('fetchJson')
+        .returns(Promise.resolve({})).once();
+    templatesMock.expects('findAndRenderTemplateArray').never();
+    return expect(list.layoutCallback()).to.eventually.be
+        .rejectedWith(/Response must contain an array/);
+  });
+
+  it('should load and render with a different root', () => {
+    const different = [
+      {title: 'Title1'},
+    ];
+    element.setAttribute('items', 'different');
+    const itemElement = document.createElement('div');
+    xhrMock.expects('fetchJson')
+        .returns(Promise.resolve({different})).once();
+    templatesMock.expects('findAndRenderTemplateArray')
+        .withExactArgs(element, different)
+        .returns(Promise.resolve([itemElement])).once();
+    return list.layoutCallback().then(() => {
+      expect(list.container_.contains(itemElement)).to.be.true;
     });
   });
 
@@ -104,7 +133,7 @@ describe('amp-list component', () => {
         .returns(renderPromise).once();
     return list.layoutCallback().then(() => {
       return Promise.all([xhrPromise, renderPromise]).then(() => {
-        expect(list.element.getAttribute('role')).to.equal('list');
+        expect(list.container_.getAttribute('role')).to.equal('list');
         expect(itemElement.getAttribute('role')).to.equal('listitem');
       });
     });

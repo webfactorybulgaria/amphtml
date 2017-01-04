@@ -14,20 +14,27 @@
  * limitations under the License.
  */
 
-import {isVisibilitySpecValid} from './visibility-impl';
+import {dev, user} from '../../../src/log';
+import {getElement, isVisibilitySpecValid} from './visibility-impl';
 import {Observable} from '../../../src/observable';
-import {getService} from '../../../src/service';
-import {timer} from '../../../src/timer';
-import {user} from '../../../src/log';
-import {viewerFor} from '../../../src/viewer';
-import {viewportFor} from '../../../src/viewport';
-import {visibilityFor} from '../../../src/visibility';
+import {getServicePromiseForDoc} from '../../../src/service';
+import {timerFor} from '../../../src/timer';
+import {viewerForDoc} from '../../../src/viewer';
+import {viewportForDoc} from '../../../src/viewport';
+import {getDataParamsFromAttributes, matches} from '../../../src/dom';
+import {Visibility} from './visibility-impl';
+import {isExperimentOn} from '../../../src/experiments';
+import {
+  nativeIntersectionObserverSupported,
+} from '../../../src/intersection-observer-polyfill';
 
 const MIN_TIMER_INTERVAL_SECONDS_ = 0.5;
 const DEFAULT_MAX_TIMER_LENGTH_SECONDS_ = 7200;
 const SCROLL_PRECISION_PERCENT = 5;
 const VAR_H_SCROLL_BOUNDARY = 'horizontalScrollBoundary';
 const VAR_V_SCROLL_BOUNDARY = 'verticalScrollBoundary';
+const VARIABLE_DATA_ATTRIBUTE_KEY = /^vars(.+)/;
+
 
 /**
  * Type to define a callback that is called when an instrumented event fires.
@@ -35,15 +42,6 @@ const VAR_V_SCROLL_BOUNDARY = 'verticalScrollBoundary';
  */
 let AnalyticsEventListenerDef;
 
-/**
- * @param {!Window} window Window object to listen on.
- * @param {!JSONType} config Configuration for instrumentation.
- * @param {!AnalyticsEventListenerDef} listener Callback to call when the event
- *          fires.
- */
-export function addListener(window, config, listener) {
-  return instrumentationServiceFor(window).addListener(config, listener);
-}
 
 /**
  * Events that can result in analytics data to be sent.
@@ -55,7 +53,23 @@ export const AnalyticsEventType = {
   CLICK: 'click',
   TIMER: 'timer',
   SCROLL: 'scroll',
+  HIDDEN: 'hidden',
 };
+
+/** @const {string} */
+const TAG = 'Analytics.Instrumentation';
+
+
+/**
+ * Events that can result in analytics data to be sent.
+ * @const {Array<AnalyticsEventType>}
+ */
+const ALLOWED_IN_EMBED = [
+  AnalyticsEventType.VISIBLE,
+  AnalyticsEventType.CLICK,
+  AnalyticsEventType.TIMER,
+  AnalyticsEventType.HIDDEN,
+];
 
 /**
  * Ignore Most of this class as it has not been thought through yet. It will
@@ -64,35 +78,42 @@ export const AnalyticsEventType = {
 class AnalyticsEvent {
 
   /**
-   * @param {!AnalyticsEventType} type The type of event.
-   * @param {!Object<string, string>} A map of vars and their values.
+   * @param {!AnalyticsEventType|string} type The type of event.
+   * @param {!Object<string, string>=} opt_vars A map of vars and their values.
    */
-  constructor(type, vars) {
+  constructor(type, opt_vars) {
+    /** @const  */
     this.type = type;
-    this.vars = vars || Object.create(null);
+    /** @const  */
+    this.vars = opt_vars || Object.create(null);
   }
 }
 
 /** @private Visible for testing. */
 export class InstrumentationService {
   /**
-   * @param {!Window} window
+   * @param {!../../../src/service/ampdoc-impl.AmpDoc} ampdoc
    */
-  constructor(window) {
-    /** @const {!Window} */
-    this.win_ = window;
-
-    /** @const {string} */
-    this.TAG_ = 'Analytics.Instrumentation';
-
-    /** @const {!Viewer} */
-    this.viewer_ = viewerFor(window);
-
-    /** @const {!Viewport} */
-    this.viewport_ = viewportFor(window);
+  constructor(ampdoc) {
+    /** @const {!../../../src/service/ampdoc-impl.AmpDoc} ampdoc */
+    this.ampdoc = ampdoc;
 
     /** @private {boolean} */
-    this.clickHandlerRegistered_ = false;
+    this.visibilityV2Enabled_ =
+        nativeIntersectionObserverSupported(ampdoc.win) &&
+            isExperimentOn(ampdoc.win, 'visibility-v2');
+
+    /** @const @private {!./visibility-impl.Visibility} */
+    this.visibility_ = new Visibility(this.ampdoc);
+
+    /** @const {!../../../src/service/timer-impl.Timer} */
+    this.timer_ = timerFor(this.ampdoc.win);
+
+    /** @private @const {!../../../src/service/viewer-impl.Viewer} */
+    this.viewer_ = viewerForDoc(this.ampdoc);
+
+    /** @const {!../../../src/service/viewport-impl.Viewport} */
+    this.viewport_ = viewportForDoc(this.ampdoc);
 
     /** @private {!Observable<!Event>} */
     this.clickObservable_ = new Observable();
@@ -100,7 +121,8 @@ export class InstrumentationService {
     /** @private {boolean} */
     this.scrollHandlerRegistered_ = false;
 
-    /** @private {!Observable<Event>} */
+    /** @private {!Observable<
+        !../../../src/service/viewport-impl.ViewportChangedEventDef>} */
     this.scrollObservable_ = new Observable();
 
     /** @private {!Object<string, !Observable<!AnalyticsEvent>>} */
@@ -113,25 +135,36 @@ export class InstrumentationService {
      */
     this.customEventBuffer_ = {};
 
+    /** @private {boolean} */
+    this.clickHandlerRegistered_ = false;
+
     // Stop buffering of custom events after 10 seconds. Assumption is that all
     // `amp-analytics` elements will have been instrumented by this time.
-    timer.delay(() => {
+    this.timer_.delay(() => {
       this.customEventBuffer_ = undefined;
     }, 10000);
   }
 
   /**
    * @param {!JSONType} config Configuration for instrumentation.
-   * @param {!AnalyticsEventListenerDef} The callback to call when the event
-   *   occurs.
+   * @param {!AnalyticsEventListenerDef} listener The callback to call when the event
+   *  occurs.
+   * @param {!Element} analyticsElement The element associated with the
+   *  config.
    */
-  addListener(config, listener) {
+  addListener(config, listener, analyticsElement) {
     const eventType = config['on'];
+    if (!this.isTriggerAllowed_(eventType, analyticsElement)) {
+      user().error(TAG, 'Trigger type "' + eventType + '" is not ' +
+        'allowed in the embed.');
+      return;
+    }
     if (eventType === AnalyticsEventType.VISIBLE) {
-      this.createVisibilityListener_(listener, config);
+      this.createVisibilityListener_(listener, config,
+          AnalyticsEventType.VISIBLE, analyticsElement);
     } else if (eventType === AnalyticsEventType.CLICK) {
       if (!config['selector']) {
-        user.error(this.TAG_, 'Missing required selector on click trigger');
+        user().error(TAG, 'Missing required selector on click trigger');
         return;
       }
 
@@ -140,7 +173,7 @@ export class InstrumentationService {
           this.createSelectiveListener_(listener, config['selector']));
     } else if (eventType === AnalyticsEventType.SCROLL) {
       if (!config['scrollSpec']) {
-        user.error(this.TAG_, 'Missing scrollSpec on scroll trigger.');
+        user().error(TAG, 'Missing scrollSpec on scroll trigger.');
         return;
       }
       this.registerScrollTrigger_(config['scrollSpec'], listener);
@@ -152,11 +185,16 @@ export class InstrumentationService {
         left: this.viewport_.getScrollLeft(),
         width: size.width,
         height: size.height,
+        relayoutAll: false,
+        velocity: 0,  // Hack for typing.
       });
     } else if (eventType === AnalyticsEventType.TIMER) {
       if (this.isTimerSpecValid_(config['timerSpec'])) {
         this.createTimerListener_(listener, config['timerSpec']);
       }
+    } else if (eventType === AnalyticsEventType.HIDDEN) {
+      this.createVisibilityListener_(listener, config,
+          AnalyticsEventType.HIDDEN, analyticsElement);
     } else {
       let observers = this.customEventObservers_[eventType];
       if (!observers) {
@@ -167,9 +205,10 @@ export class InstrumentationService {
 
       // Push recent events if any.
       if (this.customEventBuffer_) {
+        /** @const {!Array<!AnalyticsEvent>} */
         const buffer = this.customEventBuffer_[eventType];
         if (buffer) {
-          timer.delay(() => {
+          this.timer_.delay(() => {
             buffer.forEach(event => {
               listener(event);
             });
@@ -182,9 +221,10 @@ export class InstrumentationService {
   /**
    * Triggers the analytics event with the specified type.
    * @param {string} eventType
+   * @param {!Object<string, string>=} opt_vars A map of vars and their values.
    */
-  triggerEvent(eventType) {
-    const event = new AnalyticsEvent(eventType);
+  triggerEvent(eventType, opt_vars) {
+    const event = new AnalyticsEvent(eventType, opt_vars);
 
     // Enqueue.
     if (this.customEventBuffer_) {
@@ -206,55 +246,68 @@ export class InstrumentationService {
   /**
    * Creates listeners for visibility conditions or calls the callback if all
    * the conditions are met.
-   * @param {!AnalyticsEventListenerDef} The callback to call when the event
-   *   occurs.
+   * @param {!AnalyticsEventListenerDef} callback The callback to call when the
+   *   event occurs.
    * @param {!JSONType} config Configuration for instrumentation.
+   * @param {AnalyticsEventType} eventType Event type for which the callback is triggered.
+   * @param {!Element} analyticsElement The element assoicated with the
+   *   config.
    * @private
    */
-  createVisibilityListener_(callback, config) {
-    if (config['visibilitySpec']) {
+  createVisibilityListener_(callback, config, eventType, analyticsElement) {
+    dev().assert(eventType == AnalyticsEventType.VISIBLE ||
+        eventType == AnalyticsEventType.HIDDEN,
+        'createVisibilityListener should be called with visible or hidden ' +
+        'eventType');
+    const shouldBeVisible = eventType == AnalyticsEventType.VISIBLE;
+    /** @const {!JSONType} */
+    const spec = config['visibilitySpec'];
+    if (spec) {
       if (!isVisibilitySpecValid(config)) {
         return;
       }
 
-      this.runOrSchedule_(() => {
-        visibilityFor(this.win_).then(visibility => {
-          visibility.listenOnce(config['visibilitySpec'], vars => {
-            callback(new AnalyticsEvent(AnalyticsEventType.VISIBLE, vars));
-          });
-        });
-      });
-    } else {
-      this.runOrSchedule_(() => {
-        callback(new AnalyticsEvent(AnalyticsEventType.VISIBLE));
-      });
-    }
-  }
+      const listenOnceFunc = this.visibilityV2Enabled_
+          ? this.visibility_.listenOnceV2.bind(this.visibility_)
+          : this.visibility_.listenOnce.bind(this.visibility_);
 
-  /**
-   * @param {function()} fn function to run or schedule.
-   * @private
-   */
-  runOrSchedule_(fn) {
-    if (this.viewer_.isVisible()) {
-      fn();
-    } else {
-      this.viewer_.onVisibilityChanged(() => {
-        if (this.viewer_.isVisible()) {
-          fn();
+      listenOnceFunc(spec, vars => {
+        const el = getElement(this.ampdoc, spec['selector'],
+            analyticsElement, spec['selectionMethod']);
+        if (el) {
+          const attr = getDataParamsFromAttributes(el, undefined,
+              VARIABLE_DATA_ATTRIBUTE_KEY);
+          for (const key in attr) {
+            vars[key] = attr[key];
+          }
         }
-      });
+        callback(new AnalyticsEvent(eventType, vars));
+      }, shouldBeVisible, analyticsElement);
+    } else {
+      if (this.viewer_.isVisible() == shouldBeVisible) {
+        callback(new AnalyticsEvent(eventType));
+        config['called'] = true;
+      } else {
+        this.viewer_.onVisibilityChanged(() => {
+          if (!config['called'] &&
+              this.viewer_.isVisible() == shouldBeVisible) {
+            callback(new AnalyticsEvent(eventType));
+            config['called'] = true;
+          }
+        });
+      }
     }
   }
 
   /**
-   * Ensure we have a click listener registered on the document.
+   * Ensure we have a click listener registered on the document that contains
+   * the given analytics element.
    * @private
    */
   ensureClickListener_() {
     if (!this.clickHandlerRegistered_) {
       this.clickHandlerRegistered_ = true;
-      this.win_.document.documentElement.addEventListener(
+      this.ampdoc.getRootNode().addEventListener(
           'click', this.onClick_.bind(this));
     }
   }
@@ -268,7 +321,7 @@ export class InstrumentationService {
   }
 
   /**
-   * @param {!ViewportChangedEventDef} e
+   * @param {!../../../src/service/viewport-impl.ViewportChangedEventDef} e
    * @private
    */
   onScroll_(e) {
@@ -282,23 +335,45 @@ export class InstrumentationService {
    */
   createSelectiveListener_(listener, selector) {
     return e => {
-      // First do the cheap lookups.
-      if (selector === '*' || this.matchesSelector_(e.target, selector)) {
-        listener(new AnalyticsEvent(AnalyticsEventType.CLICK));
-      } else {
-        // More expensive search.
+      try {
         let el = e.target;
-        while (el.parentElement != null && el.parentElement.tagName != 'BODY') {
-          el = el.parentElement;
-          if (this.matchesSelector_(el, selector)) {
-            listener(new AnalyticsEvent(AnalyticsEventType.CLICK));
-            // Don't fire the event multiple times even if the more than one
-            // ancestor matches the selector.
-            return;
+        // First do the cheap lookups.
+        if (selector === '*' || matches(el, selector)) {
+          listener(
+            new AnalyticsEvent(
+              AnalyticsEventType.CLICK,
+              getDataParamsFromAttributes(
+                el,
+                undefined,
+                VARIABLE_DATA_ATTRIBUTE_KEY
+              )
+            )
+          );
+        } else {
+          // More expensive search.
+          while (el.parentElement != null &&
+              el.parentElement.tagName != 'BODY') {
+            el = el.parentElement;
+            if (matches(el, selector)) {
+              listener(
+                new AnalyticsEvent(
+                  AnalyticsEventType.CLICK,
+                  getDataParamsFromAttributes(
+                    el,
+                    undefined,
+                    VARIABLE_DATA_ATTRIBUTE_KEY
+                  )
+                )
+              );
+              // Don't fire the event multiple times even if the more than one
+              // ancestor matches the selector.
+              return;
+            }
           }
         }
+      } catch (selectorError) {
+        user().error(TAG, 'Bad query selector.', selector, selectorError);
       }
-
     };
   }
 
@@ -312,7 +387,7 @@ export class InstrumentationService {
   registerScrollTrigger_(config, listener) {
     if (!Array.isArray(config['verticalBoundaries']) &&
         !Array.isArray(config['horizontalBoundaries'])) {
-      user.error(this.TAG_, 'Boundaries are required for the scroll ' +
+      user().error(TAG, 'Boundaries are required for the scroll ' +
           'trigger to work.');
       return;
     }
@@ -380,7 +455,7 @@ export class InstrumentationService {
     for (let b = 0; b < bounds.length; b++) {
       let bound = bounds[b];
       if (typeof bound !== 'number' || !isFinite(bound)) {
-        user.error(this.TAG_, 'Scroll trigger boundaries must be finite.');
+        user().error(TAG, 'Scroll trigger boundaries must be finite.');
         return result;
       }
 
@@ -392,50 +467,24 @@ export class InstrumentationService {
   }
 
   /**
-   * @param {!Element} el
-   * @param {string} selector
-   * @return {boolean} True if the given element matches the given selector.
-   * @private
-   */
-  matchesSelector_(el, selector) {
-    try {
-      const matcher = el.matches ||
-          el.webkitMatchesSelector ||
-          el.mozMatchesSelector ||
-          el.msMatchesSelector ||
-          el.oMatchesSelector;
-      if (matcher) {
-        return matcher.call(el, selector);
-      }
-      const matches = this.win_.document.querySelectorAll(selector);
-      let i = matches.length;
-      while (i-- > 0 && matches.item(i) != el) {};
-      return i > -1;
-    } catch (selectorError) {
-      user.error(this.TAG_, 'Bad query selector.', selector, selectorError);
-    }
-    return false;
-  }
-
-  /**
    * @param {JSONType} timerSpec
    * @private
    */
   isTimerSpecValid_(timerSpec) {
     if (!timerSpec) {
-      user.error(this.TAG_, 'Bad timer specification');
+      user().error(TAG, 'Bad timer specification');
       return false;
     } else if (!timerSpec.hasOwnProperty('interval')) {
-      user.error(this.TAG_, 'Timer interval specification required');
+      user().error(TAG, 'Timer interval specification required');
       return false;
     } else if (typeof timerSpec['interval'] !== 'number' ||
                timerSpec['interval'] < MIN_TIMER_INTERVAL_SECONDS_) {
-      user.error(this.TAG_, 'Bad timer interval specification');
+      user().error(TAG, 'Bad timer interval specification');
       return false;
     } else if (timerSpec.hasOwnProperty('maxTimerLength') &&
               (typeof timerSpec['maxTimerLength'] !== 'number' ||
                   timerSpec['maxTimerLength'] <= 0)) {
-      user.error(this.TAG_, 'Bad maxTimerLength specification');
+      user().error(TAG, 'Bad maxTimerLength specification');
       return false;
     } else {
       return true;
@@ -448,24 +497,49 @@ export class InstrumentationService {
    * @private
    */
   createTimerListener_(listener, timerSpec) {
-    const intervalId = this.win_.setInterval(
-        listener.bind(null, new AnalyticsEvent(AnalyticsEventType.TIMER)),
-        timerSpec['interval'] * 1000);
-    listener(new AnalyticsEvent(AnalyticsEventType.TIMER));
+    const hasImmediate = timerSpec.hasOwnProperty('immediate');
+    const callImmediate = hasImmediate ? Boolean(timerSpec['immediate']) : true;
+    const intervalId = this.ampdoc.win.setInterval(
+      listener.bind(null, new AnalyticsEvent(AnalyticsEventType.TIMER)),
+      timerSpec['interval'] * 1000
+    );
+
+    if (callImmediate) {
+      listener(new AnalyticsEvent(AnalyticsEventType.TIMER));
+    }
 
     const maxTimerLength = timerSpec['maxTimerLength'] ||
         DEFAULT_MAX_TIMER_LENGTH_SECONDS_;
-    this.win_.setTimeout(this.win_.clearInterval.bind(this.win_, intervalId),
+    this.ampdoc.win.setTimeout(
+        this.ampdoc.win.clearInterval.bind(this.ampdoc.win, intervalId),
         maxTimerLength * 1000);
+  }
+
+  /**
+   * Checks to confirm that a given trigger type is allowed for the element.
+   * Specifically, it confirms that if the element is in the embed, only a
+   * subset of the trigger types are allowed.
+   * @param  {!AnalyticsEventType} triggerType
+   * @param  {!Element} element
+   * @return {boolean} True if the trigger is allowed. False otherwise.
+   */
+  isTriggerAllowed_(triggerType, element) {
+    if (element.ownerDocument.defaultView != this.ampdoc.win) {
+      return ALLOWED_IN_EMBED.indexOf(triggerType) > -1;
+    }
+    return true;
   }
 }
 
 /**
- * @param {!Window} window
- * @return {!InstrumentationService}
+ * It's important to resolve instrumentation asynchronously in elements that depends on
+ * it in multi-doc scope. Otherwise an element life-cycle could resolve way before we
+ * have the service available.
+ *
+ * @param {!Node|!../../../src/service/ampdoc-impl.AmpDoc} nodeOrDoc
+ * @return {!Promise<InstrumentationService>}
  */
-export function instrumentationServiceFor(window) {
-  return getService(window, 'amp-analytics-instrumentation', () => {
-    return new InstrumentationService(window);
-  });
+export function instrumentationServiceForDoc(nodeOrDoc) {
+  return /** @type {!Promise<InstrumentationService>} */ (
+      getServicePromiseForDoc(nodeOrDoc, 'amp-analytics-instrumentation'));
 }
